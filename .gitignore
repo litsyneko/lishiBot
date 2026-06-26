@@ -19,11 +19,8 @@ data/*.db
 .DS_Store
 Thumbs.db
 
-# Lavalink runtime
-lavalink/logs/
-lavalink/*.log
-lavalink/stdout.log
-lavalink/stderr.log
+# Lavalink (binaries and config tracked separately)
+lavalink/
 
 # Temporary scripts
 fix_sticker_ko.py
