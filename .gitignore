@@ -1,0 +1,32 @@
+config.json
+node_modules
+dist
+.idea
+.vscode
+
+# Logs
+*.log
+logs/
+
+# Database
+data/*.db
+
+# Environment
+.env
+.env.*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Lavalink runtime
+lavalink/logs/
+lavalink/*.log
+lavalink/stdout.log
+lavalink/stderr.log
+
+# Temporary scripts
+fix_sticker_ko.py
+
+# OpenCode workspace
+.omo/

@@ -1,0 +1,20 @@
+{
+  "token": "YOUR_DISCORD_BOT_TOKEN",
+  "guilds": ["YOUR_TEST_GUILD_ID"],
+  "clientId": "YOUR_BOT_APPLICATION_ID",
+  "lavalink": {
+    "host": "localhost",
+    "port": 2333,
+    "password": "youshallnotpass",
+    "secure": false
+  },
+  "ai": {
+    "provider": "disabled",
+    "geminiApiKey": "YOUR_GEMINI_API_KEY",
+    "apiKey": "YOUR_OPENCODE_ZEN_API_KEY",
+    "model": "deepseek-v4-flash-free"
+  },
+  "economy": {
+    "databasePath": "./data/economy.db"
+  }
+}
