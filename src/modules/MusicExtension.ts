@@ -1,22 +1,43 @@
-import { Extension, SubCommandGroup, listener, option } from '@pikokr/command.ts'
-import { ApplicationCommandOptionType, ChatInputCommandInteraction, GuildMember, MessageFlags, PermissionFlagsBits } from 'discord.js'
-import type { LavalinkManager } from 'lavalink-client'
-import type { CustomPlayer } from '../music/customPlayer'
-import { formatQueuePage, paginateQueue, parseSeekInput, type RepeatMode } from '../music/musicService'
+import { createMusicSettingsService } from '../features/music/musicSettings'
 import { createAudioService } from '../music/audioService'
 import type { AudioService } from '../music/audioService'
-import { replyEphemeral } from '../utils/replies'
-import { createMusicSettingsService } from '../features/music/musicSettings'
-import { getVolume, setVolume } from '../music/volumeStore'
+import type { CustomPlayer } from '../music/customPlayer'
+import {
+  type RepeatMode,
+  formatQueuePage,
+  paginateQueue,
+  parseSeekInput,
+} from '../music/musicService'
+import { setVolume } from '../music/volumeStore'
 import { logger } from '../utils/logger'
+import { replyEphemeral } from '../utils/replies'
+import {
+  Extension,
+  SubCommandGroup,
+  listener,
+  option,
+} from '@pikokr/command.ts'
+import {
+  ApplicationCommandOptionType,
+  ChatInputCommandInteraction,
+  GuildMember,
+  MessageFlags,
+  PermissionFlagsBits,
+} from 'discord.js'
+import type { LavalinkManager } from 'lavalink-client'
 
-const musicGroup = new SubCommandGroup({ name: '음악', description: '음악 재생 명령어' })
+const musicGroup = new SubCommandGroup({
+  name: '음악',
+  description: '음악 재생 명령어',
+})
 
 const musicSettings = createMusicSettingsService()
 
 let lavalinkManager: LavalinkManager<CustomPlayer> | undefined
 
-export function setMusicManager(manager: LavalinkManager<CustomPlayer> | undefined): void {
+export function setMusicManager(
+  manager: LavalinkManager<CustomPlayer> | undefined
+): void {
   lavalinkManager = manager
 }
 
@@ -50,7 +71,9 @@ function requireGuild(interaction: ChatInputCommandInteraction): string {
   return guild.id
 }
 
-function requireVoiceChannelId(interaction: ChatInputCommandInteraction): string {
+function requireVoiceChannelId(
+  interaction: ChatInputCommandInteraction
+): string {
   const member = interaction.member
   if (!(member instanceof GuildMember)) {
     throw new Error('서버 안에서만 음악 명령을 사용할 수 있어요.')
@@ -65,7 +88,12 @@ function requireVoiceChannelId(interaction: ChatInputCommandInteraction): string
 }
 
 class MusicExtensionClass extends Extension {
-  @musicGroup.command({ name: '재생', description: '곡을 검색하거나 URL로 재생합니다.' })
+  private autocompleteRegistered = false
+
+  @musicGroup.command({
+    name: '재생',
+    description: '곡을 검색하거나 URL로 재생합니다.',
+  })
   async play(
     i: ChatInputCommandInteraction,
     @option({
@@ -75,7 +103,7 @@ class MusicExtensionClass extends Extension {
       required: true,
       autocomplete: true,
     })
-    query: string,
+    query: string
   ) {
     try {
       const guildId = requireGuild(i)
@@ -86,24 +114,37 @@ class MusicExtensionClass extends Extension {
 
       const audio = requireAudioService()
 
-      const player = await audio.getOrCreatePlayer(guildId, voiceChannelId, textChannelId)
+      const player = await audio.getOrCreatePlayer(
+        guildId,
+        voiceChannelId,
+        textChannelId
+      )
       const result = await audio.search(player, query, i.user)
       await audio.connectPlayer(player, i)
 
       if (result.loadType === 'playlist') {
-        await audio.handlePlaylistPlay(i as ChatInputCommandInteraction<'cached'>, player, result)
+        await audio.handlePlaylistPlay(
+          i as ChatInputCommandInteraction<'cached'>,
+          player,
+          result
+        )
       } else {
         const track = result.tracks[0]
         if (track === null || track === undefined) {
           await i.editReply('재생할 곡을 찾지 못했어요.')
           return
         }
-        await audio.handleTrackPlay(i as ChatInputCommandInteraction<'cached'>, player, track)
+        await audio.handleTrackPlay(
+          i as ChatInputCommandInteraction<'cached'>,
+          player,
+          track
+        )
       }
 
       await audio.ensurePlayback(player)
     } catch (err) {
-      const message = err instanceof Error ? err.message : '알 수 없는 오류가 발생했어요.'
+      const message =
+        err instanceof Error ? err.message : '알 수 없는 오류가 발생했어요.'
       try {
         if (i.deferred || i.replied) {
           await i.editReply(message)
@@ -133,11 +174,14 @@ class MusicExtensionClass extends Extension {
       i,
       skipped !== undefined && skipped !== null
         ? `스킵했어요: **${skipped.info.title}**`
-        : '곡을 건너뛰었어요.',
+        : '곡을 건너뛰었어요.'
     )
   }
 
-  @musicGroup.command({ name: '정지', description: '재생을 정지하고 대기열을 비웁니다.' })
+  @musicGroup.command({
+    name: '정지',
+    description: '재생을 정지하고 대기열을 비웁니다.',
+  })
   async stop(i: ChatInputCommandInteraction) {
     const guildId = requireGuild(i)
     const manager = requireManager()
@@ -152,7 +196,10 @@ class MusicExtensionClass extends Extension {
     await replyEphemeral(i, '재생을 정지하고 대기열을 비웠어요.')
   }
 
-  @musicGroup.command({ name: '일시정지', description: '재생을 일시정지합니다.' })
+  @musicGroup.command({
+    name: '일시정지',
+    description: '재생을 일시정지합니다.',
+  })
   async pause(i: ChatInputCommandInteraction) {
     const guildId = requireGuild(i)
     const manager = requireManager()
@@ -167,7 +214,10 @@ class MusicExtensionClass extends Extension {
     await replyEphemeral(i, '일시정지했어요.')
   }
 
-  @musicGroup.command({ name: '다시재생', description: '일시정지된 곡을 다시 재생합니다.' })
+  @musicGroup.command({
+    name: '다시재생',
+    description: '일시정지된 곡을 다시 재생합니다.',
+  })
   async resume(i: ChatInputCommandInteraction) {
     const guildId = requireGuild(i)
     const manager = requireManager()
@@ -192,7 +242,7 @@ class MusicExtensionClass extends Extension {
       min_value: 1,
       required: false,
     })
-    _page: number,
+    _page: number
   ) {
     const guildId = requireGuild(i)
     const manager = requireManager()
@@ -216,7 +266,10 @@ class MusicExtensionClass extends Extension {
     await replyEphemeral(i, formatQueuePage(queuePage))
   }
 
-  @musicGroup.command({ name: '재생중', description: '지금 재생 중인 곡을 확인합니다.' })
+  @musicGroup.command({
+    name: '재생중',
+    description: '지금 재생 중인 곡을 확인합니다.',
+  })
   async nowplaying(i: ChatInputCommandInteraction) {
     const guildId = requireGuild(i)
     const manager = requireManager()
@@ -230,11 +283,16 @@ class MusicExtensionClass extends Extension {
 
     await replyEphemeral(
       i,
-      `지금 재생 중: **${track.info.title}** — ${track.info.author ?? '알 수 없음'}`,
+      `지금 재생 중: **${track.info.title}** — ${
+        track.info.author ?? '알 수 없음'
+      }`
     )
   }
 
-  @musicGroup.command({ name: '볼륨', description: '볼륨을 설정합니다 (0-100).' })
+  @musicGroup.command({
+    name: '볼륨',
+    description: '볼륨을 설정합니다 (0-100).',
+  })
   async volume(
     i: ChatInputCommandInteraction,
     @option({
@@ -245,7 +303,7 @@ class MusicExtensionClass extends Extension {
       max_value: 100,
       required: true,
     })
-    volume: number,
+    volume: number
   ) {
     const guildId = requireGuild(i)
     const manager = requireManager()
@@ -258,11 +316,24 @@ class MusicExtensionClass extends Extension {
 
     await player.setVolume(volume)
     setVolume(guildId, volume)
-    musicSettings.patchSettings(guildId, { volume }).catch(() => {})
-    await replyEphemeral(i, `볼륨을 ${volume}으로 설정했어요. 다음 곡부터도 유지돼요.`)
+    musicSettings.patchSettings(guildId, { volume }).catch((err: unknown) => {
+      logger.debug(
+        'Music',
+        `patchSettings(volume) failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      )
+    })
+    await replyEphemeral(
+      i,
+      `볼륨을 ${volume}으로 설정했어요. 다음 곡부터도 유지돼요.`
+    )
   }
 
-  @musicGroup.command({ name: '셔플', description: '대기열을 무작위로 섞습니다.' })
+  @musicGroup.command({
+    name: '셔플',
+    description: '대기열을 무작위로 섞습니다.',
+  })
   async shuffle(i: ChatInputCommandInteraction) {
     const guildId = requireGuild(i)
     const manager = requireManager()
@@ -291,7 +362,7 @@ class MusicExtensionClass extends Extension {
       ],
       required: true,
     })
-    mode: RepeatMode,
+    mode: RepeatMode
   ) {
     const guildId = requireGuild(i)
     const manager = requireManager()
@@ -303,9 +374,22 @@ class MusicExtensionClass extends Extension {
     }
 
     await player.setRepeatMode(mode)
-    musicSettings.patchSettings(guildId, { repeatMode: mode }).catch(() => {})
+    musicSettings
+      .patchSettings(guildId, { repeatMode: mode })
+      .catch((err: unknown) => {
+        logger.debug(
+          'Music',
+          `patchSettings(repeatMode) failed: ${
+            err instanceof Error ? err.message : String(err)
+          }`
+        )
+      })
     const label =
-      mode === 'off' ? '반복을 끄고' : mode === 'track' ? '한 곡 반복으로' : '대기열 반복으로'
+      mode === 'off'
+        ? '반복을 끄고'
+        : mode === 'track'
+        ? '한 곡 반복으로'
+        : '대기열 반복으로'
     await replyEphemeral(i, `${label} 설정했어요.`)
   }
 
@@ -318,7 +402,7 @@ class MusicExtensionClass extends Extension {
       description: '위치 (예: 1:30 또는 90)',
       required: true,
     })
-    input: string,
+    input: string
   ) {
     const guildId = requireGuild(i)
     const manager = requireManager()
@@ -334,7 +418,10 @@ class MusicExtensionClass extends Extension {
     await replyEphemeral(i, `\`${input}\` 위치로 이동했어요.`)
   }
 
-  @musicGroup.command({ name: '삭제', description: '대기열에서 특정 곡을 삭제합니다.' })
+  @musicGroup.command({
+    name: '삭제',
+    description: '대기열에서 특정 곡을 삭제합니다.',
+  })
   async remove(
     i: ChatInputCommandInteraction,
     @option({
@@ -344,7 +431,7 @@ class MusicExtensionClass extends Extension {
       min_value: 1,
       required: true,
     })
-    index: number,
+    index: number
   ) {
     const guildId = requireGuild(i)
     const manager = requireManager()
@@ -359,7 +446,10 @@ class MusicExtensionClass extends Extension {
     await replyEphemeral(i, `${index}번 곡을 삭제했어요.`)
   }
 
-  @musicGroup.command({ name: '비우기', description: '대기열을 비웁니다 (현재 곡은 유지).' })
+  @musicGroup.command({
+    name: '비우기',
+    description: '대기열을 비웁니다 (현재 곡은 유지).',
+  })
   async clear(i: ChatInputCommandInteraction) {
     const guildId = requireGuild(i)
     const manager = requireManager()
@@ -374,7 +464,10 @@ class MusicExtensionClass extends Extension {
     await replyEphemeral(i, '대기열을 비웠어요.')
   }
 
-  @musicGroup.command({ name: '채널설정', description: '음악 알림을 보낼 DJ 채널을 지정합니다. (관리자 전용)' })
+  @musicGroup.command({
+    name: '채널설정',
+    description: '음악 알림을 보낼 DJ 채널을 지정합니다. (관리자 전용)',
+  })
   async setchannel(
     i: ChatInputCommandInteraction,
     @option({
@@ -383,12 +476,15 @@ class MusicExtensionClass extends Extension {
       description: 'DJ 채널로 지정할 텍스트 채널 (비워두면 해제)',
       required: false,
     })
-    _channel: unknown,
+    _channel: unknown
   ) {
     const guildId = requireGuild(i)
 
     const member = i.member
-    if (!(member instanceof GuildMember) || !member.permissions.has(PermissionFlagsBits.ManageGuild)) {
+    if (
+      !(member instanceof GuildMember) ||
+      !member.permissions.has(PermissionFlagsBits.ManageGuild)
+    ) {
       await replyEphemeral(i, '서버 관리 권한이 필요해요.')
       return
     }
@@ -396,22 +492,38 @@ class MusicExtensionClass extends Extension {
     const channel = i.options.getChannel('채널', false)
     const channelId = channel !== null ? channel.id : null
 
-    musicSettings.setDjChannelId(guildId, channelId).catch(() => {})
+    musicSettings.setDjChannelId(guildId, channelId).catch((err: unknown) => {
+      logger.debug(
+        'Music',
+        `setDjChannelId failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      )
+    })
 
     if (channelId === null) {
-      await replyEphemeral(i, 'DJ 채널 설정을 해제했어요. 이제 명령어를 사용한 채널에 알림을 보내요.')
+      await replyEphemeral(
+        i,
+        'DJ 채널 설정을 해제했어요. 이제 명령어를 사용한 채널에 알림을 보내요.'
+      )
     } else {
       await replyEphemeral(i, `<#${channelId}>을(를) DJ 채널로 지정했어요.`)
     }
   }
 
-  @musicGroup.command({ name: '채널', description: '현재 지정된 DJ 채널을 확인합니다.' })
+  @musicGroup.command({
+    name: '채널',
+    description: '현재 지정된 DJ 채널을 확인합니다.',
+  })
   async channel(i: ChatInputCommandInteraction) {
     const guildId = requireGuild(i)
     const djChannelId = await musicSettings.getDjChannelId(guildId)
 
     if (djChannelId === null) {
-      await replyEphemeral(i, '지정된 DJ 채널이 없어요. `/음악 채널설정`으로 지정할 수 있어요.')
+      await replyEphemeral(
+        i,
+        '지정된 DJ 채널이 없어요. `/음악 채널설정`으로 지정할 수 있어요.'
+      )
     } else {
       await replyEphemeral(i, `현재 DJ 채널: <#${djChannelId}>`)
     }
@@ -429,6 +541,8 @@ class MusicExtensionClass extends Extension {
 
   @listener({ event: 'clientReady' })
   async registerAutocomplete() {
+    if (this.autocompleteRegistered) return
+    this.autocompleteRegistered = true
     this.client.on('interactionCreate', async (interaction) => {
       if (!interaction.isAutocomplete()) {
         return
@@ -443,7 +557,9 @@ class MusicExtensionClass extends Extension {
       const query = interaction.options.getFocused().toString().trim()
 
       if (query.length === 0) {
-        await interaction.respond([{ name: '🔎 검색어를 입력해 주세요', value: '' }])
+        await interaction.respond([
+          { name: '🔎 검색어를 입력해 주세요', value: '' },
+        ])
         return
       }
 
@@ -477,15 +593,24 @@ class MusicExtensionClass extends Extension {
       } catch {
         await interaction.respond([
           { name: query.slice(0, 100), value: query.slice(0, 100) },
-          { name: `${query} 음악`.slice(0, 100), value: `${query} 음악`.slice(0, 100) },
-          { name: `${query} 노래`.slice(0, 100), value: `${query} 노래`.slice(0, 100) },
+          {
+            name: `${query} 음악`.slice(0, 100),
+            value: `${query} 음악`.slice(0, 100),
+          },
+          {
+            name: `${query} 노래`.slice(0, 100),
+            value: `${query} 노래`.slice(0, 100),
+          },
         ])
       }
     })
   }
 }
 
-async function fetchYouTubeSuggestions(query: string, maxResults: number): Promise<string[]> {
+async function fetchYouTubeSuggestions(
+  query: string,
+  maxResults: number
+): Promise<string[]> {
   const params = new URLSearchParams({
     ds: 'yt',
     hl: 'ko',
@@ -494,14 +619,18 @@ async function fetchYouTubeSuggestions(query: string, maxResults: number): Promi
     gs_ri: 'youtube',
     q: query,
   })
-  const res = await fetch(`https://suggestqueries-clients6.youtube.com/complete/search?${params}`, {
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      Accept: 'text/javascript, application/javascript, application/ecmascript, */*; q=0.01',
-      Referer: 'https://www.youtube.com/',
-    },
-  })
+  const res = await fetch(
+    `https://suggestqueries-clients6.youtube.com/complete/search?${params}`,
+    {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        Accept:
+          'text/javascript, application/javascript, application/ecmascript, */*; q=0.01',
+        Referer: 'https://www.youtube.com/',
+      },
+    }
+  )
   if (!res.ok) {
     return []
   }

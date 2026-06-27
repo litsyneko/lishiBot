@@ -1,8 +1,11 @@
 export type AutoLeaveDeps = {
-  readonly cancel: (id: number) => void
+  readonly cancel: (id: ReturnType<typeof setTimeout>) => void
   readonly delayMs: number
   readonly leaveGuild: (guildId: string) => void
-  readonly schedule: (delayMs: number, fire: () => void) => number
+  readonly schedule: (
+    delayMs: number,
+    fire: () => void
+  ) => ReturnType<typeof setTimeout>
 }
 
 export type AutoLeaveScheduler = {
@@ -10,8 +13,10 @@ export type AutoLeaveScheduler = {
   readonly scheduleLeave: (guildId: string) => void
 }
 
-export function createAutoLeaveScheduler(deps: AutoLeaveDeps): AutoLeaveScheduler {
-  const timers = new Map<string, number>()
+export function createAutoLeaveScheduler(
+  deps: AutoLeaveDeps
+): AutoLeaveScheduler {
+  const timers = new Map<string, ReturnType<typeof setTimeout>>()
 
   return {
     cancelLeave: (guildId) => {

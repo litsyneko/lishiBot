@@ -1,15 +1,14 @@
+import { createAutoLeaveScheduler } from '../music/autoLeaveTimer'
+import { type ChannelMember, shouldAutoLeave } from '../music/voiceState'
+import { logger } from '../utils/logger'
 import { Extension, listener } from '@pikokr/command.ts'
 import type { VoiceState } from 'discord.js'
-import { config } from '../config'
-import { createAutoLeaveScheduler } from '../music/autoLeaveTimer'
-import { shouldAutoLeave, type ChannelMember } from '../music/voiceState'
-import { logger } from '../utils/logger'
 
 class AutoLeaveExtensionClass extends Extension {
   private scheduler = createAutoLeaveScheduler({
     delayMs: 300000,
-    schedule: (ms, fn) => setTimeout(fn, ms) as unknown as number,
-    cancel: (id) => clearTimeout(id as unknown as ReturnType<typeof setTimeout>),
+    schedule: (ms, fn) => setTimeout(fn, ms),
+    cancel: (id) => clearTimeout(id),
     leaveGuild: (guildId) => {
       const guild = this.client.guilds.cache.get(guildId)
       if (guild === undefined) {
@@ -22,11 +21,14 @@ class AutoLeaveExtensionClass extends Extension {
       if (me.voice.channelId === null) {
         return
       }
-      void me.voice.disconnect().then(() => {
-        logger.info('AutoLeave', `길드 ${guildId}에서 자동 퇴장했어요.`)
-      }).catch(() => {
-        logger.warn('AutoLeave', `길드 ${guildId} 퇴장 중 오류`)
-      })
+      void me.voice
+        .disconnect()
+        .then(() => {
+          logger.info('AutoLeave', `길드 ${guildId}에서 자동 퇴장했어요.`)
+        })
+        .catch(() => {
+          logger.warn('AutoLeave', `길드 ${guildId} 퇴장 중 오류`)
+        })
     },
   })
 
@@ -48,7 +50,13 @@ class AutoLeaveExtensionClass extends Extension {
       return
     }
 
-    const members: ChannelMember[] = [...(voiceChannel as { members: Map<string, { id: string; user: { bot: boolean } }> }).members.values()].map((m) => ({
+    const members: ChannelMember[] = [
+      ...(
+        voiceChannel as {
+          members: Map<string, { id: string; user: { bot: boolean } }>
+        }
+      ).members.values(),
+    ].map((m) => ({
       id: m.id,
       isBot: m.user.bot,
     }))

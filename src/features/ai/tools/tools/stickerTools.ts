@@ -1,5 +1,9 @@
-import { Client, StickerFormatType, type Sticker } from 'discord.js'
-import type { ToolDefinition, ToolExecutionContext, ToolResult } from '../toolTypes'
+import type {
+  ToolDefinition,
+  ToolExecutionContext,
+  ToolResult,
+} from '../toolTypes'
+import { Client, type Sticker, StickerFormatType } from 'discord.js'
 
 const ALLOWED_GUILD_ID = '1440598081648328816'
 
@@ -35,7 +39,7 @@ export function getStickerTool(client: Client): ToolDefinition {
     hidden: true,
     async execute(
       args: Record<string, unknown>,
-      _context: ToolExecutionContext,
+      _context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const guild = client.guilds.cache.get(ALLOWED_GUILD_ID)
@@ -50,7 +54,9 @@ export function getStickerTool(client: Client): ToolDefinition {
         if (query) {
           const lower = query.toLowerCase()
           const exact = stickers.find((s) => s.name.toLowerCase() === lower)
-          const partial = stickers.filter((s) => s.name.toLowerCase().includes(lower))
+          const partial = stickers.filter((s) =>
+            s.name.toLowerCase().includes(lower)
+          )
           matched = exact !== undefined ? [exact] : [...partial.values()]
         } else {
           matched = [...stickers.values()]
@@ -77,15 +83,23 @@ export function getStickerTool(client: Client): ToolDefinition {
         const total = stickers.size
         const showing = results.length
         const summary = query
-          ? `"${query}" 검색 결과 (${showing}/${matched.length}개):\n${summaryLines.join('\n')}`
-          : `전체 스티커 목록 (${showing}/${total}개):\n${summaryLines.join('\n')}`
+          ? `"${query}" 검색 결과 (${showing}/${
+              matched.length
+            }개):\n${summaryLines.join('\n')}`
+          : `전체 스티커 목록 (${showing}/${total}개):\n${summaryLines.join(
+              '\n'
+            )}`
 
         return {
           success: true,
           message: query
             ? `"${query}" 검색 결과 ${matched.length}개 중 ${showing}개를 찾았어요.`
             : `전체 스티커 ${total}개 중 ${showing}개를 불러왔어요.`,
-          data: { count: results.length, total: stickers.size, stickers: results },
+          data: {
+            count: results.length,
+            total: stickers.size,
+            stickers: results,
+          },
           summary,
         }
       } catch (error) {

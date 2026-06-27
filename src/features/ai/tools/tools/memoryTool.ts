@@ -1,5 +1,5 @@
-import type { ToolDefinition } from '../toolTypes'
 import { getMemoryStore } from '../../memoryStore'
+import type { ToolDefinition } from '../toolTypes'
 
 export const saveMemoryTool: ToolDefinition = {
   declaration: {
@@ -34,7 +34,10 @@ export const saveMemoryTool: ToolDefinition = {
 
     const store = getMemoryStore()
     if (!store.isAvailable()) {
-      return { success: false, message: '메모리를 사용할 수 없어요 (Supabase 미설정).' }
+      return {
+        success: false,
+        message: '메모리를 사용할 수 없어요 (Supabase 미설정).',
+      }
     }
 
     try {
@@ -43,7 +46,9 @@ export const saveMemoryTool: ToolDefinition = {
     } catch (err) {
       return {
         success: false,
-        message: `메모리 저장 실패: ${err instanceof Error ? err.message : String(err)}`,
+        message: `메모리 저장 실패: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
       }
     }
   },

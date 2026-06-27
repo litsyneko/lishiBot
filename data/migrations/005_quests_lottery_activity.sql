@@ -48,6 +48,26 @@ CREATE TABLE IF NOT EXISTS random_drops (
   channel_id TEXT
 );
 
+-- 기존 random_drops 테이블에 channel_id, start_hour, admin_channel_id 컬럼이 없으면 추가
+DO $$
+BEGIN
+  BEGIN
+    ALTER TABLE random_drops ADD COLUMN IF NOT EXISTS channel_id TEXT;
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+
+  BEGIN
+    ALTER TABLE random_drops ADD COLUMN IF NOT EXISTS start_hour INTEGER NOT NULL DEFAULT 4;
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+
+  BEGIN
+    ALTER TABLE random_drops ADD COLUMN IF NOT EXISTS end_hour INTEGER NOT NULL DEFAULT 23;
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+
+  BEGIN
+    ALTER TABLE random_drops ADD COLUMN IF NOT EXISTS admin_channel_id TEXT;
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+END $$;
+
 ALTER TABLE random_drops ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN
   CREATE POLICY "Allow all on random_drops" ON random_drops FOR ALL USING (true) WITH CHECK (true);

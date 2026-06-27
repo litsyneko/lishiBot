@@ -1,13 +1,18 @@
-import type { Client, Guild } from 'discord.js'
 import type { ToolExecutionContext } from '../toolTypes'
+import type { Client, Guild } from 'discord.js'
 
-export async function resolveGuild(client: Client, context: ToolExecutionContext): Promise<Guild> {
+export async function resolveGuild(
+  client: Client,
+  context: ToolExecutionContext
+): Promise<Guild> {
   const cached = client.guilds.cache.get(context.guildId)
   if (cached !== undefined) {
     return cached
   }
 
-  const fetched = await client.guilds.fetch(context.guildId).catch(() => undefined)
+  const fetched = await client.guilds
+    .fetch(context.guildId)
+    .catch(() => undefined)
   if (fetched !== undefined) {
     return fetched
   }

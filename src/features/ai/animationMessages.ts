@@ -1,4 +1,9 @@
-export type AiStage = 'generating' | 'permission' | 'understanding' | 'executing' | 'completed'
+export type AiStage =
+  | 'generating'
+  | 'permission'
+  | 'understanding'
+  | 'executing'
+  | 'completed'
 
 const KIRAKIRA = '<a:kirakira:1519382939778158784>'
 
@@ -17,4 +22,3 @@ export function formatStageMessage(stage: AiStage, toolName?: string): string {
   }
   return base
 }
-

@@ -1,33 +1,41 @@
-import { Extension, listener } from '@pikokr/command.ts'
-import { EmbedBuilder, type Message, PermissionFlagsBits } from 'discord.js'
 import { config } from '../config'
-import { createGeminiProvider } from '../features/ai/geminiProvider'
-import { createOpencodeZenProvider } from '../features/ai/opencodeZenProvider'
-import { createAiProviderChain } from '../features/ai/aiProviderChain'
+import { handleMessageCreate } from '../events/messageCreate'
 import type { ProviderAdapter } from '../features/ai/aiPolicy'
 import type { ToolDefinitionInput } from '../features/ai/aiPolicy'
-import { formatStageMessage, type AiStage } from '../features/ai/animationMessages'
-import { stripThinkTags, toComponentV2 } from '../features/ai/thinkStripper'
-import { handleMessageCreate } from '../events/messageCreate'
-import { handleSessionReply, startSession } from '../features/ai/sessionReply'
+import { createAiProviderChain } from '../features/ai/aiProviderChain'
+import {
+  type AiStage,
+  formatStageMessage,
+} from '../features/ai/animationMessages'
 import {
   appendToSession,
   appendToToolHistory,
   bindMessageToSession,
   getOrCreateSession,
-  getSessionByMessage,
   reviveSession,
 } from '../features/ai/conversationStore'
-import { createToolRegistry } from '../features/ai/tools/toolRegistry'
-import type { ToolExecutionContext, ToolRegistry, ProposalInfo } from '../features/ai/tools/toolTypes'
-import { buildProposalEmbed, toolNameMap } from '../features/ai/tools/proposalCard'
+import { createGeminiProvider } from '../features/ai/geminiProvider'
+import { createOpencodeZenProvider } from '../features/ai/opencodeZenProvider'
 import { checkToolPermissionLayer3 } from '../features/ai/permissions/permissionCheck'
+import { handleSessionReply } from '../features/ai/sessionReply'
+import { stripThinkTags, toComponentV2 } from '../features/ai/thinkStripper'
+import { toolNameMap } from '../features/ai/tools/proposalCard'
+import { createToolRegistry } from '../features/ai/tools/toolRegistry'
+import type {
+  ToolExecutionContext,
+  ToolRegistry,
+} from '../features/ai/tools/toolTypes'
 import { logger } from '../utils/logger'
+import { Extension, listener } from '@pikokr/command.ts'
+import { EmbedBuilder, type Message, PermissionFlagsBits } from 'discord.js'
 
 function buildProvider(): ProviderAdapter | undefined {
   const aiConfig = config.ai
 
-  if (aiConfig.geminiApiKey !== undefined && aiConfig.geminiApiKey.trim().length > 0) {
+  if (
+    aiConfig.geminiApiKey !== undefined &&
+    aiConfig.geminiApiKey.trim().length > 0
+  ) {
     const gemini = createGeminiProvider({
       apiKey: aiConfig.geminiApiKey,
       model: 'gemini-3.1-flash-lite',
@@ -84,7 +92,7 @@ class AiMentionExtensionClass extends Extension {
   private buildToolDefinitions(
     message: Message,
     hasManageGuild: boolean,
-    hasAdmin: boolean,
+    hasAdmin: boolean
   ): ToolDefinitionInput[] {
     if (this.toolRegistry === undefined) return []
 
@@ -104,7 +112,7 @@ class AiMentionExtensionClass extends Extension {
         {},
         context,
         hasManageGuild,
-        hasAdmin,
+        hasAdmin
       )
       if (!permCheck.ok) continue
 
@@ -159,7 +167,8 @@ class AiMentionExtensionClass extends Extension {
     let replyComplete: Promise<void> = Promise.resolve()
 
     const hasAdmin =
-      message.member?.permissions.has(PermissionFlagsBits.Administrator) ?? false
+      message.member?.permissions.has(PermissionFlagsBits.Administrator) ??
+      false
     const tools = this.buildToolDefinitions(message, hasManageGuild, hasAdmin)
 
     const result = await handleMessageCreate({
@@ -175,10 +184,13 @@ class AiMentionExtensionClass extends Extension {
         userId,
         hasManageGuild,
         isOwner,
-        memberDisplayName: message.member?.displayName ?? message.author.displayName,
+        memberDisplayName:
+          message.member?.displayName ?? message.author.displayName,
         guildName: message.guild?.name,
         channelId: message.channel.id,
-        channelName: message.channel.isDMBased() ? undefined : message.channel.name,
+        channelName: message.channel.isDMBased()
+          ? undefined
+          : message.channel.name,
       },
       sendStage: async (stage: AiStage) => {
         const sent = await message.reply(formatStageMessage(stage))
@@ -187,7 +199,10 @@ class AiMentionExtensionClass extends Extension {
       editStage: async (stage: AiStage) => {
         if (stageMessageId !== undefined) {
           try {
-            await message.channel.messages.edit(stageMessageId, formatStageMessage(stage))
+            await message.channel.messages.edit(
+              stageMessageId,
+              formatStageMessage(stage)
+            )
           } catch {
             // message may have been deleted
           }
@@ -195,7 +210,10 @@ class AiMentionExtensionClass extends Extension {
       },
       triggerTyping: () => {
         const channel = message.channel
-        if ('sendTyping' in channel && typeof channel.sendTyping === 'function') {
+        if (
+          'sendTyping' in channel &&
+          typeof channel.sendTyping === 'function'
+        ) {
           void channel.sendTyping()
         }
       },
@@ -205,7 +223,12 @@ class AiMentionExtensionClass extends Extension {
             const embed = new EmbedBuilder()
               .setTitle(reply.embed.title)
               .setDescription(reply.embed.description)
-              .addFields(reply.embed.fields.map((f) => ({ name: f.name, value: f.value })))
+              .addFields(
+                reply.embed.fields.map((f) => ({
+                  name: f.name,
+                  value: f.value,
+                }))
+              )
             const sent = await message.reply({ embeds: [embed] })
             botMessageId = sent.id
           } else {
@@ -213,7 +236,10 @@ class AiMentionExtensionClass extends Extension {
             const v2 = toComponentV2(cleaned)
             const sent = await message.reply({ content: '', ...v2 })
             botMessageId = sent.id
-            lastBotResponse = cleaned.split('\n\n-#')[0].split('\n\n> 사용:')[0].trim()
+            lastBotResponse = cleaned
+              .split('\n\n-#')[0]
+              .split('\n\n> 사용:')[0]
+              .trim()
           }
           if (stageMessageId !== undefined) {
             try {
@@ -240,88 +266,144 @@ class AiMentionExtensionClass extends Extension {
       result.aiText !== undefined
     ) {
       const sessionKey = getOrCreateSession(guildId, userId)
-      appendToSession(sessionKey, { content: result.enrichedPrompt, role: 'user' })
-      appendToSession(sessionKey, { content: result.aiText, role: 'assistant' }, botMessageId)
+      appendToSession(sessionKey, {
+        content: result.enrichedPrompt,
+        role: 'user',
+      })
+      appendToSession(
+        sessionKey,
+        { content: result.aiText, role: 'assistant' },
+        botMessageId
+      )
     }
   }
 
   private async handleReplyToBotMessage(
     message: Message,
-    referencedMessageId: string,
+    referencedMessageId: string
   ): Promise<void> {
     const pendingToolCall = this.pendingProposals.get(referencedMessageId)
     if (pendingToolCall !== undefined && this.toolRegistry !== undefined) {
       this.pendingProposals.delete(referencedMessageId)
+      try {
+        if (Date.now() - pendingToolCall.createdAt > PROPOSAL_TTL_MS) {
+          await message.reply('작업 제안이 만료되었어요. 다시 요청해 주세요.')
+          return
+        }
 
-      if (Date.now() - pendingToolCall.createdAt > PROPOSAL_TTL_MS) {
-        await message.reply('작업 제안이 만료되었어요. 다시 요청해 주세요.')
+        if (message.author.id !== pendingToolCall.requesterId) {
+          await message.reply('작업을 요청한 분만 확인하실 수 있어요.')
+          return
+        }
+
+        const confirmWords = [
+          '네',
+          '응',
+          '그래',
+          '넵',
+          'yes',
+          'ㅇ',
+          'ok',
+          '좋아',
+        ]
+        const userText = message.content.trim().toLowerCase()
+        const isConfirm = confirmWords.some(
+          (w) => userText === w || userText.startsWith(w)
+        )
+
+        if (!isConfirm) {
+          await message.reply(
+            '작업을 취소했어요. 다른 작업이 필요하면 다시 말씀해 주세요.'
+          )
+          return
+        }
+
+        const toolDef = this.toolRegistry.get(pendingToolCall.name)
+        if (toolDef === undefined) {
+          await message.reply('❌ 작업 정보를 찾을 수 없어요.')
+          return
+        }
+
+        const sessionKey = pendingToolCall.sessionKey
+        reviveSession(sessionKey)
+
+        const context: ToolExecutionContext = {
+          guildId: message.guild?.id ?? '',
+          guildName: message.guild?.name ?? '',
+          userId: message.author.id,
+          channelId: message.channel.id,
+        }
+
+        const hasManageGuild =
+          message.member?.permissions.has(PermissionFlagsBits.ManageGuild) ??
+          false
+        const hasAdmin =
+          message.member?.permissions.has(PermissionFlagsBits.Administrator) ??
+          false
+
+        const executeCheck = checkToolPermissionLayer3(
+          toolDef,
+          pendingToolCall.args,
+          context,
+          hasManageGuild,
+          hasAdmin
+        )
+        if (!executeCheck.ok) {
+          await message.reply(`⛔ ${executeCheck.reason}`)
+          return
+        }
+
+        const toolDisplayName =
+          toolNameMap[pendingToolCall.name] ?? pendingToolCall.name
+
+        const result = await toolDef.execute(pendingToolCall.args, context)
+        logger.info(
+          'TOOL',
+          `제안 승인 실행: ${pendingToolCall.name} 성공=${result.success}`
+        )
+
+        const userConfirmContext = `[대화 중 - 사용자: ${
+          message.member?.displayName ?? message.author.displayName
+        }] ${message.content}`
+        appendToSession(sessionKey, {
+          content: userConfirmContext,
+          role: 'user',
+        })
+
+        const responseText = result.success
+          ? `${result.message}\n\n> 사용: ${toolDisplayName}\n\n-# 이 메시지에 답장하면 대화를 이어갈 수 있어요.`
+          : `실패했어요: ${result.message}\n\n-# 이 메시지에 답장하면 대화를 이어갈 수 있어요.`
+
+        const v2 = toComponentV2(responseText)
+        const replyMsg = await message.reply({ content: '', ...v2 })
+        const sessionContent = responseText
+          .split('\n\n-#')[0]
+          .split('\n\n> 사용:')[0]
+          .trim()
+        appendToSession(
+          sessionKey,
+          { content: sessionContent, role: 'assistant' },
+          replyMsg.id
+        )
         return
+      } catch (err) {
+        logger.error(
+          'AI',
+          `제안 승인 처리 중 오류: ${
+            err instanceof Error ? err.message : String(err)
+          }`
+        )
+        await message
+          .reply('작업 처리 중 오류가 발생했어요.')
+          .catch((err: unknown) => {
+            logger.debug(
+              'AI',
+              `reply failed: ${
+                err instanceof Error ? err.message : String(err)
+              }`
+            )
+          })
       }
-
-      if (message.author.id !== pendingToolCall.requesterId) {
-        await message.reply('작업을 요청한 분만 확인하실 수 있어요.')
-        return
-      }
-
-      const confirmWords = ['네', '응', '그래', '넵', 'yes', 'ㅇ', 'ok', '좋아']
-      const userText = message.content.trim().toLowerCase()
-      const isConfirm = confirmWords.some((w) => userText === w || userText.startsWith(w))
-
-      if (!isConfirm) {
-        await message.reply('작업을 취소했어요. 다른 작업이 필요하면 다시 말씀해 주세요.')
-        return
-      }
-
-      const toolDef = this.toolRegistry.get(pendingToolCall.name)
-      if (toolDef === undefined) {
-        await message.reply('❌ 작업 정보를 찾을 수 없어요.')
-        return
-      }
-
-      const sessionKey = pendingToolCall.sessionKey
-      reviveSession(sessionKey)
-
-      const context: ToolExecutionContext = {
-        guildId: message.guild?.id ?? '',
-        guildName: message.guild?.name ?? '',
-        userId: message.author.id,
-        channelId: message.channel.id,
-      }
-
-      const hasManageGuild =
-        message.member?.permissions.has(PermissionFlagsBits.ManageGuild) ?? false
-      const hasAdmin =
-        message.member?.permissions.has(PermissionFlagsBits.Administrator) ?? false
-
-      const executeCheck = checkToolPermissionLayer3(
-        toolDef,
-        pendingToolCall.args,
-        context,
-        hasManageGuild,
-        hasAdmin,
-      )
-      if (!executeCheck.ok) {
-        await message.reply(`⛔ ${executeCheck.reason}`)
-        return
-      }
-
-      const toolDisplayName = toolNameMap[pendingToolCall.name] ?? pendingToolCall.name
-
-      const result = await toolDef.execute(pendingToolCall.args, context)
-      logger.info('TOOL', `제안 승인 실행: ${pendingToolCall.name} 성공=${result.success}`)
-
-      const userConfirmContext = `[대화 중 - 사용자: ${message.member?.displayName ?? message.author.displayName}] ${message.content}`
-      appendToSession(sessionKey, { content: userConfirmContext, role: 'user' })
-
-      const responseText = result.success
-        ? `${result.message}\n\n> 사용: ${toolDisplayName}\n\n-# 이 메시지에 답장하면 대화를 이어갈 수 있어요.`
-        : `실패했어요: ${result.message}\n\n-# 이 메시지에 답장하면 대화를 이어갈 수 있어요.`
-
-      const v2 = toComponentV2(responseText)
-      const replyMsg = await message.reply({ content: '', ...v2 })
-      const sessionContent = responseText.split('\n\n-#')[0].split('\n\n> 사용:')[0].trim()
-      appendToSession(sessionKey, { content: sessionContent, role: 'assistant' }, replyMsg.id)
-      return
     }
 
     if (this.provider === undefined) {
@@ -329,26 +411,37 @@ class AiMentionExtensionClass extends Extension {
     }
 
     try {
-      const referenced = await message.channel.messages.fetch(referencedMessageId)
+      const referenced = await message.channel.messages.fetch(
+        referencedMessageId
+      )
       if (referenced.author.id !== this.client.user?.id) {
         return
       }
 
       const hasManageGuild =
-        message.member?.permissions.has(PermissionFlagsBits.ManageGuild) ?? false
+        message.member?.permissions.has(PermissionFlagsBits.ManageGuild) ??
+        false
       const isOwner = message.guild?.ownerId === message.author.id
       const hasAdmin =
-        message.member?.permissions.has(PermissionFlagsBits.Administrator) ?? false
+        message.member?.permissions.has(PermissionFlagsBits.Administrator) ??
+        false
 
       const userMessage = message.content.replace(/<@!?\d+>/u, '').trim()
       if (userMessage.length === 0) {
         return
       }
 
-      const referencedContent = stripThinkTags(referenced.content).split('\n\n-#')[0].trim()
+      const referencedContent = stripThinkTags(referenced.content)
+        .split('\n\n-#')[0]
+        .trim()
 
-      const sent = await message.reply('<a:kirakira:1519382939778158784> AI가 답장을 생각하고 있어요..')
-      if ('sendTyping' in message.channel && typeof message.channel.sendTyping === 'function') {
+      const sent = await message.reply(
+        '<a:kirakira:1519382939778158784> AI가 답장을 생각하고 있어요..'
+      )
+      if (
+        'sendTyping' in message.channel &&
+        typeof message.channel.sendTyping === 'function'
+      ) {
         void message.channel.sendTyping()
       }
 
@@ -361,10 +454,13 @@ class AiMentionExtensionClass extends Extension {
         previousBotResponse: referencedContent,
         provider: this.provider,
         userMessage,
-        memberDisplayName: message.member?.displayName ?? message.author.displayName,
+        memberDisplayName:
+          message.member?.displayName ?? message.author.displayName,
         guildName: message.guild?.name,
         channelId: message.channel.id,
-        channelName: message.channel.isDMBased() ? undefined : message.channel.name,
+        channelName: message.channel.isDMBased()
+          ? undefined
+          : message.channel.name,
         hasManageGuild,
         isOwner,
         tools,
@@ -384,7 +480,12 @@ class AiMentionExtensionClass extends Extension {
       const replyMsg = await message.reply({ content: '', ...v2 })
       bindMessageToSession(result.sessionKey, replyMsg.id)
     } catch (err) {
-      logger.error('AI', `답장 세션 처리 중 오류: ${err instanceof Error ? err.message : String(err)}`)
+      logger.error(
+        'AI',
+        `답장 세션 처리 중 오류: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      )
     }
   }
 }

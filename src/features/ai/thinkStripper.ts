@@ -1,6 +1,6 @@
-import { TextDisplayBuilder, SeparatorBuilder } from '@discordjs/builders'
-import { MessageFlags, SeparatorSpacingSize } from 'discord.js'
 import { logger } from '../../utils/logger'
+import { SeparatorBuilder, TextDisplayBuilder } from '@discordjs/builders'
+import { MessageFlags, SeparatorSpacingSize } from 'discord.js'
 
 const THINK_PATTERN = /<think>[\s\S]*?<\/think>/gi
 
@@ -10,7 +10,10 @@ export function stripThinkTags(content: string): string {
 
 const HR_PATTERN = /^[ \t]*---[ \t]*$/gmu
 
-export function toComponentV2(text: string): { components: (TextDisplayBuilder | SeparatorBuilder)[]; flags: number } {
+export function toComponentV2(text: string): {
+  components: (TextDisplayBuilder | SeparatorBuilder)[]
+  flags: number
+} {
   const trimmed = text.trim()
   if (trimmed.length === 0) {
     return { components: [], flags: MessageFlags.IsComponentsV2 }
@@ -26,14 +29,21 @@ export function toComponentV2(text: string): { components: (TextDisplayBuilder |
     }
   }
 
-  const sections = trimmed.split(HR_PATTERN).map((s) => s.trim()).filter(Boolean)
+  const sections = trimmed
+    .split(HR_PATTERN)
+    .map((s) => s.trim())
+    .filter(Boolean)
   logger.info('V2', `Components V2 변환: 분리선 ${sections.length - 1}개`)
   const flat: (TextDisplayBuilder | SeparatorBuilder)[] = []
 
   for (let i = 0; i < sections.length; i++) {
     flat.push(new TextDisplayBuilder().setContent(sections[i]))
     if (i < sections.length - 1) {
-      flat.push(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+      flat.push(
+        new SeparatorBuilder()
+          .setDivider(true)
+          .setSpacing(SeparatorSpacingSize.Small)
+      )
     }
   }
 
@@ -44,18 +54,22 @@ export function toComponentV2(text: string): { components: (TextDisplayBuilder |
 export function stripToolCallSyntax(text: string): string {
   let result = text
   result = result.replace(/```(?:json|python)?\s*[\s\S]*?\}\s*```/gu, '')
-  result = result.replace(
-    /^[ \t]*\w+\s*\([^)]*\)\s*$/gmu,
-    (line) => (/^\w+\s*\(\s*\)\s*$/u.test(line.trim()) ? line : ''),
+  result = result.replace(/^[ \t]*\w+\s*\([^)]*\)\s*$/gmu, (line) =>
+    /^\w+\s*\(\s*\)\s*$/u.test(line.trim()) ? line : ''
   )
   result = result.replace(
     /^[ \t]*\w+\s*\([\s\S]*?\)\s*$/gmu,
     (line, _m, offset) => {
       const before = result.slice(0, offset).trimEnd().split('\n').pop() ?? ''
       if (/=\s*$/u.test(before) || /["'`]\s*$/u.test(before)) return line
-      if (/^(edit|create|delete|lookup|list|get|reorder|bind)_/iu.test(line.trim())) return ''
+      if (
+        /^(edit|create|delete|lookup|list|get|reorder|bind)_/iu.test(
+          line.trim()
+        )
+      )
+        return ''
       return line
-    },
+    }
   )
   result = result.replace(/\{\s*\w+\s*\([^)]*\)\s*\}/gu, '')
   if (/^\s*\{\s*"(?:function|name|tool|parameters)"\s*:/mu.test(result)) {
@@ -67,7 +81,10 @@ export function stripToolCallSyntax(text: string): string {
         if (result[i] === '{') depth++
         else if (result[i] === '}') {
           depth--
-          if (depth === 0) { end = i + 1; break }
+          if (depth === 0) {
+            end = i + 1
+            break
+          }
         }
       }
       if (end !== -1) {

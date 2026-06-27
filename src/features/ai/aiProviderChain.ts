@@ -1,11 +1,13 @@
-import type { ProviderAdapter, GenerateResult } from './aiPolicy'
+import type { GenerateResult, ProviderAdapter } from './aiPolicy'
 
 export type AiProviderChainConfig = {
   readonly fallback?: ProviderAdapter | undefined
   readonly primary: ProviderAdapter
 }
 
-export function createAiProviderChain(config: AiProviderChainConfig): ProviderAdapter {
+export function createAiProviderChain(
+  config: AiProviderChainConfig
+): ProviderAdapter {
   return {
     generate: async (prompt, history, options) => {
       try {

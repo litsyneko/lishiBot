@@ -1,5 +1,10 @@
-import type { Client } from 'discord.js'
 import type { ToolDefinition, ToolRegistry } from './toolTypes'
+import {
+  createCategoryTool,
+  deleteCategoryTool,
+  listCategoryChannelsTool,
+  reorderCategoryChannelsTool,
+} from './tools/categoryTools'
 import {
   createChannelTool,
   deleteChannelTool,
@@ -8,10 +13,7 @@ import {
   lookupChannelTool,
   readChannelMessagesTool,
 } from './tools/channelTools'
-import { editThreadTool, readThreadMessagesTool } from './tools/threadTools'
 import { listForumPostsTool, readForumPostTool } from './tools/forumTools'
-import { getServerInfoTool } from './tools/serverTools'
-import { lookupMemberTool } from './tools/memberTools'
 import {
   banMemberTool,
   kickMemberTool,
@@ -19,17 +21,7 @@ import {
   timeoutMemberTool,
   unbanMemberTool,
 } from './tools/memberActionTools'
-import { voiceActionTool, voiceMemberLookupTool } from './tools/voiceTools'
-import { listRolesTool, lookupRoleTool } from './tools/roleTools'
-import {
-  listCategoryChannelsTool,
-  reorderCategoryChannelsTool,
-  createCategoryTool,
-  deleteCategoryTool,
-} from './tools/categoryTools'
-import { getStickerTool } from './tools/stickerTools'
-import { sendStickerTool } from './tools/sendStickerTool'
-import { sendMessageTool } from './tools/sendMessageTool'
+import { lookupMemberTool } from './tools/memberTools'
 import { saveMemoryTool } from './tools/memoryTool'
 import {
   clearQueueTool,
@@ -38,13 +30,21 @@ import {
   playMusicTool,
   removeFromQueueTool,
   resumeMusicTool,
+  searchMusicTool,
   seekMusicTool,
   setVolumeTool,
   shuffleQueueTool,
   skipTrackTool,
   stopMusicTool,
-  searchMusicTool,
 } from './tools/musicTool'
+import { listRolesTool, lookupRoleTool } from './tools/roleTools'
+import { sendMessageTool } from './tools/sendMessageTool'
+import { sendStickerTool } from './tools/sendStickerTool'
+import { getServerInfoTool } from './tools/serverTools'
+import { getStickerTool } from './tools/stickerTools'
+import { editThreadTool, readThreadMessagesTool } from './tools/threadTools'
+import { voiceActionTool, voiceMemberLookupTool } from './tools/voiceTools'
+import type { Client } from 'discord.js'
 
 export function createToolRegistry(client: Client): ToolRegistry {
   const tools = new Map<string, ToolDefinition>()
@@ -99,7 +99,6 @@ export function createToolRegistry(client: Client): ToolRegistry {
     get: (name: string) => tools.get(name),
     getAll: () => [...tools.values()],
     register,
-    toFunctionDeclarations: () =>
-      [...tools.values()].map((t) => t.declaration),
+    toFunctionDeclarations: () => [...tools.values()].map((t) => t.declaration),
   }
 }

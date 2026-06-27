@@ -1,3 +1,4 @@
+import { logger } from '../../utils/logger'
 import { getSupabase } from './supabase'
 
 export type Memory = {
@@ -27,12 +28,17 @@ export function createMemoryStore(): MemoryStore {
     const supabase = getSupabase()
     if (supabase === null) return []
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('user_memories')
       .select('id, user_id, content, created_at')
       .eq('user_id', userId)
       .order('created_at', { ascending: true })
       .limit(MAX_MEMORIES)
+
+    if (error !== null) {
+      logger.warn('Memory', `메모리 조회 실패: ${error.message}`)
+      return []
+    }
 
     return (data ?? []).map((r) => ({
       id: r.id,
@@ -51,7 +57,7 @@ export function createMemoryStore(): MemoryStore {
     const existing = await list(userId)
     if (existing.length >= MAX_MEMORIES) {
       const oldest = existing.reduce((a, b) =>
-        a.createdAt < b.createdAt ? a : b,
+        a.createdAt < b.createdAt ? a : b
       )
       await supabase.from('user_memories').delete().eq('id', oldest.id)
     }
@@ -62,7 +68,8 @@ export function createMemoryStore(): MemoryStore {
       .select('id, user_id, content, created_at')
       .single()
 
-    if (error !== null) throw new Error(`Failed to save memory: ${error.message}`)
+    if (error !== null)
+      throw new Error(`Failed to save memory: ${error.message}`)
     return {
       id: data.id,
       userId: data.user_id,
@@ -105,23 +112,59 @@ export function createMemoryStore(): MemoryStore {
     for (const memory of memories) {
       const content = memory.content.toLowerCase()
 
-      if (content.includes('이모티콘 싫어') || content.includes('이모지 싫어') || content.includes('이모티콘 별로')) {
-        adjustments.push('- 사용자가 이모지를 싫어하므로 이모지를 사용하지 마세요.')
+      if (
+        content.includes('이모티콘 싫어') ||
+        content.includes('이모지 싫어') ||
+        content.includes('이모티콘 별로')
+      ) {
+        adjustments.push(
+          '- 사용자가 이모지를 싫어하므로 이모지를 사용하지 마세요.'
+        )
       }
-      if (content.includes('간결') || content.includes('짧게') || content.includes('간단히')) {
-        adjustments.push('- 사용자가 간결한 답변을 선호하므로 1~2문장으로 짧게 답변하세요.')
+      if (
+        content.includes('간결') ||
+        content.includes('짧게') ||
+        content.includes('간단히')
+      ) {
+        adjustments.push(
+          '- 사용자가 간결한 답변을 선호하므로 1~2문장으로 짧게 답변하세요.'
+        )
       }
-      if (content.includes('자세') || content.includes('길게') || content.includes('상세')) {
-        adjustments.push('- 사용자가 자세한 설명을 선호하므로 충분한 정보를 제공하세요.')
+      if (
+        content.includes('자세') ||
+        content.includes('길게') ||
+        content.includes('상세')
+      ) {
+        adjustments.push(
+          '- 사용자가 자세한 설명을 선호하므로 충분한 정보를 제공하세요.'
+        )
       }
-      if (content.includes('진지') || content.includes('차분') || content.includes('진중')) {
-        adjustments.push('- 사용자가 진지한 태도를 선호하므로 차분하고 진지하게 대화하세요.')
+      if (
+        content.includes('진지') ||
+        content.includes('차분') ||
+        content.includes('진중')
+      ) {
+        adjustments.push(
+          '- 사용자가 진지한 태도를 선호하므로 차분하고 진지하게 대화하세요.'
+        )
       }
-      if (content.includes('장난') || content.includes('유머') || content.includes('농담')) {
-        adjustments.push('- 사용자가 유머를 좋아하므로 가벼운 농담을 섞어 대화하세요.')
+      if (
+        content.includes('장난') ||
+        content.includes('유머') ||
+        content.includes('농담')
+      ) {
+        adjustments.push(
+          '- 사용자가 유머를 좋아하므로 가벼운 농담을 섞어 대화하세요.'
+        )
       }
-      if (content.includes('조용') || content.includes('말 많이') || content.includes('시끄럽')) {
-        adjustments.push('- 사용자가 조용한 대화를 선호하므로 최소한의 말로 답변하세요.')
+      if (
+        content.includes('조용') ||
+        content.includes('말 많이') ||
+        content.includes('시끄럽')
+      ) {
+        adjustments.push(
+          '- 사용자가 조용한 대화를 선호하므로 최소한의 말로 답변하세요.'
+        )
       }
     }
 
@@ -136,7 +179,15 @@ export function createMemoryStore(): MemoryStore {
     return buildPersonalityAdjustments(memories)
   }
 
-  return { list, add, remove, clear, formatForPrompt, buildPersonalityPrompt, isAvailable }
+  return {
+    list,
+    add,
+    remove,
+    clear,
+    formatForPrompt,
+    buildPersonalityPrompt,
+    isAvailable,
+  }
 }
 
 let globalStore: MemoryStore | null = null

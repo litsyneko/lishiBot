@@ -1,6 +1,10 @@
-import { Client, Role } from 'discord.js'
-import type { ToolDefinition, ToolExecutionContext, ToolResult } from '../toolTypes'
 import { resolveGuild } from '../helpers/resolveGuild'
+import type {
+  ToolDefinition,
+  ToolExecutionContext,
+  ToolResult,
+} from '../toolTypes'
+import { Client, Role } from 'discord.js'
 
 function formatRoleInfo(role: Role): Record<string, unknown> {
   return {
@@ -22,7 +26,9 @@ function summarizeRole(role: Role): string {
     `멤버: ${role.members.size}명`,
     role.hexColor !== '#000000' ? `색상: ${role.hexColor}` : '',
     role.mentionable ? '멘션 가능' : '',
-  ].filter(Boolean).join(' | ')
+  ]
+    .filter(Boolean)
+    .join(' | ')
 }
 
 // ─── listRolesTool ───
@@ -46,7 +52,7 @@ export function listRolesTool(client: Client): ToolDefinition {
     },
     async execute(
       _args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const guild = await resolveGuild(client, context)
@@ -101,7 +107,7 @@ export function lookupRoleTool(client: Client): ToolDefinition {
     },
     async execute(
       args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const roleId = args.roleId as string | undefined
@@ -122,9 +128,7 @@ export function lookupRoleTool(client: Client): ToolDefinition {
         }
         if (!target && roleName) {
           const lower = roleName.toLowerCase()
-          target = guild.roles.cache.find(
-            (r) => r.name.toLowerCase() === lower,
-          )
+          target = guild.roles.cache.find((r) => r.name.toLowerCase() === lower)
         }
         if (!target) {
           return { success: false, message: '해당 역할을 찾을 수 없어요.' }

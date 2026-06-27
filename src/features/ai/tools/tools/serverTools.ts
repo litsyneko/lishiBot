@@ -1,6 +1,10 @@
-import { Client } from 'discord.js'
-import type { ToolDefinition, ToolExecutionContext, ToolResult } from '../toolTypes'
 import { resolveGuild } from '../helpers/resolveGuild'
+import type {
+  ToolDefinition,
+  ToolExecutionContext,
+  ToolResult,
+} from '../toolTypes'
+import { Client } from 'discord.js'
 
 // ─── getServerInfoTool ───
 
@@ -23,7 +27,7 @@ export function getServerInfoTool(client: Client): ToolDefinition {
     },
     async execute(
       _args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const guild = await resolveGuild(client, context)

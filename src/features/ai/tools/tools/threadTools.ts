@@ -1,6 +1,15 @@
-import { ChannelType, Client, PermissionFlagsBits, type ThreadChannel } from 'discord.js'
-import type { ToolDefinition, ToolExecutionContext, ToolResult } from '../toolTypes'
 import { resolveGuild } from '../helpers/resolveGuild'
+import type {
+  ToolDefinition,
+  ToolExecutionContext,
+  ToolResult,
+} from '../toolTypes'
+import {
+  ChannelType,
+  Client,
+  PermissionFlagsBits,
+  type ThreadChannel,
+} from 'discord.js'
 
 function isThreadChannel(channel: unknown): channel is ThreadChannel {
   return (
@@ -9,7 +18,8 @@ function isThreadChannel(channel: unknown): channel is ThreadChannel {
     'type' in channel &&
     ((channel as { type: ChannelType }).type === ChannelType.PublicThread ||
       (channel as { type: ChannelType }).type === ChannelType.PrivateThread ||
-      (channel as { type: ChannelType }).type === ChannelType.AnnouncementThread)
+      (channel as { type: ChannelType }).type ===
+        ChannelType.AnnouncementThread)
   )
 }
 
@@ -34,7 +44,8 @@ export function editThreadTool(client: Client): ToolDefinition {
           },
           archived: {
             type: 'boolean',
-            description: '스레드 보관 여부 (true: 보관, false: 보관 해제, 선택 사항)',
+            description:
+              '스레드 보관 여부 (true: 보관, false: 보관 해제, 선택 사항)',
           },
           autoArchiveDuration: {
             type: 'integer',
@@ -43,7 +54,8 @@ export function editThreadTool(client: Client): ToolDefinition {
           },
           locked: {
             type: 'boolean',
-            description: '스레드 잠금 여부 (true: 잠금, false: 잠금 해제, 선택 사항)',
+            description:
+              '스레드 잠금 여부 (true: 잠금, false: 잠금 해제, 선택 사항)',
           },
           slowmode: {
             type: 'integer',
@@ -66,13 +78,15 @@ export function editThreadTool(client: Client): ToolDefinition {
     },
     async execute(
       args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const threadId = args.threadId as string | undefined
         const name = args.name as string | undefined
         const archived = args.archived as boolean | undefined
-        const autoArchiveDuration = args.autoArchiveDuration as number | undefined
+        const autoArchiveDuration = args.autoArchiveDuration as
+          | number
+          | undefined
         const locked = args.locked as boolean | undefined
         const slowmode = args.slowmode as number | undefined
         const invitable = args.invitable as boolean | undefined
@@ -124,7 +138,9 @@ export function editThreadTool(client: Client): ToolDefinition {
           if (!validDurations.includes(durationNum)) {
             return {
               success: false,
-              message: `autoArchiveDuration은 ${validDurations.join(', ')} 분 중 하나여야 해요.`,
+              message: `autoArchiveDuration은 ${validDurations.join(
+                ', '
+              )} 분 중 하나여야 해요.`,
             }
           }
           editPayload.autoArchiveDuration = durationNum
@@ -136,8 +152,15 @@ export function editThreadTool(client: Client): ToolDefinition {
 
         if (slowmode !== undefined) {
           const slowmodeNum = Number(slowmode)
-          if (!Number.isInteger(slowmodeNum) || slowmodeNum < 0 || slowmodeNum > 21600) {
-            return { success: false, message: 'slowmode는 0-21600 사이의 정수여야 해요.' }
+          if (
+            !Number.isInteger(slowmodeNum) ||
+            slowmodeNum < 0 ||
+            slowmodeNum > 21600
+          ) {
+            return {
+              success: false,
+              message: 'slowmode는 0-21600 사이의 정수여야 해요.',
+            }
           }
           editPayload.rateLimitPerUser = slowmodeNum
         }
@@ -207,11 +230,13 @@ export function readThreadMessagesTool(client: Client): ToolDefinition {
           },
           before: {
             type: 'string',
-            description: '이 메시지 ID 이전의 메시지만 가져옴 (페이지네이션, 선택 사항)',
+            description:
+              '이 메시지 ID 이전의 메시지만 가져옴 (페이지네이션, 선택 사항)',
           },
           after: {
             type: 'string',
-            description: '이 메시지 ID 이후의 메시지만 가져옴 (페이지네이션, 선택 사항)',
+            description:
+              '이 메시지 ID 이후의 메시지만 가져옴 (페이지네이션, 선택 사항)',
           },
         },
         required: ['threadId'],
@@ -224,7 +249,7 @@ export function readThreadMessagesTool(client: Client): ToolDefinition {
     },
     async execute(
       args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const threadId = args.threadId as string | undefined
@@ -237,7 +262,10 @@ export function readThreadMessagesTool(client: Client): ToolDefinition {
           return { success: false, message: 'threadId가 필요해요.' }
         }
 
-        const limit = Number.isInteger(limitRaw) && limitRaw >= 1 && limitRaw <= 100 ? limitRaw : 50
+        const limit =
+          Number.isInteger(limitRaw) && limitRaw >= 1 && limitRaw <= 100
+            ? limitRaw
+            : 50
 
         const guild = await resolveGuild(client, context)
 
@@ -252,14 +280,21 @@ export function readThreadMessagesTool(client: Client): ToolDefinition {
         if (me) {
           const perms = thread.permissionsFor(me)
           if (perms && !perms.has(PermissionFlagsBits.ViewChannel)) {
-            return { success: false, message: '봇이 해당 스레드를 볼 수 없어요.' }
+            return {
+              success: false,
+              message: '봇이 해당 스레드를 볼 수 없어요.',
+            }
           }
           if (perms && !perms.has(PermissionFlagsBits.ReadMessageHistory)) {
-            return { success: false, message: '봇이 메시지 기록을 읽을 권한이 없어요.' }
+            return {
+              success: false,
+              message: '봇이 메시지 기록을 읽을 권한이 없어요.',
+            }
           }
         }
 
-        const fetchOptions: { limit: number; before?: string; after?: string } = { limit }
+        const fetchOptions: { limit: number; before?: string; after?: string } =
+          { limit }
         if (before) fetchOptions.before = before
         if (after) fetchOptions.after = after
 
@@ -271,13 +306,24 @@ export function readThreadMessagesTool(client: Client): ToolDefinition {
           .map((m) => ({
             id: m.id,
             authorId: m.author.id,
-            authorName: m.member?.displayName ?? m.author.displayName ?? m.author.username,
+            authorName:
+              m.member?.displayName ??
+              m.author.displayName ??
+              m.author.username,
             isBot: m.author.bot,
-            content: m.content.length > 500 ? `${m.content.slice(0, 500)}...` : m.content,
+            content:
+              m.content.length > 500
+                ? `${m.content.slice(0, 500)}...`
+                : m.content,
             createdAt: m.createdAt.toISOString(),
-            attachments: m.attachments.size > 0
-              ? m.attachments.map((a) => ({ filename: a.name, url: a.url, contentType: a.contentType }))
-              : undefined,
+            attachments:
+              m.attachments.size > 0
+                ? m.attachments.map((a) => ({
+                    filename: a.name,
+                    url: a.url,
+                    contentType: a.contentType,
+                  }))
+                : undefined,
             embedCount: m.embeds.length,
             replyTo: m.reference?.messageId ?? undefined,
           }))
@@ -286,13 +332,20 @@ export function readThreadMessagesTool(client: Client): ToolDefinition {
           return {
             success: true,
             message: '읽을 메시지가 없어요.',
-            data: { count: 0, messages: [], thread: { id: thread.id, name: thread.name } },
+            data: {
+              count: 0,
+              messages: [],
+              thread: { id: thread.id, name: thread.name },
+            },
             summary: '메시지 없음',
           }
         }
 
         const summaryLines = messages.map((m) => {
-          const time = new Date(m.createdAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false })
+          const time = new Date(m.createdAt).toLocaleString('ko-KR', {
+            timeZone: 'Asia/Seoul',
+            hour12: false,
+          })
           const botTag = m.isBot ? ' [봇]' : ''
           return `[${time}] ${m.authorName}${botTag}: ${m.content}`
         })

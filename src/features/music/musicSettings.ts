@@ -14,9 +14,15 @@ export type MusicSettings = {
 export type MusicSettingsService = {
   readonly ensureTableSchema: () => Promise<void>
   readonly getSettings: (guildId: string) => Promise<MusicSettings>
-  readonly patchSettings: (guildId: string, patch: Partial<MusicSettings>) => Promise<void>
+  readonly patchSettings: (
+    guildId: string,
+    patch: Partial<MusicSettings>
+  ) => Promise<void>
   readonly getDjChannelId: (guildId: string) => Promise<string | null>
-  readonly setDjChannelId: (guildId: string, channelId: string | null) => Promise<void>
+  readonly setDjChannelId: (
+    guildId: string,
+    channelId: string | null
+  ) => Promise<void>
 }
 
 const DEFAULT_SETTINGS: MusicSettings = {
@@ -31,7 +37,9 @@ function isRepeatMode(value: string | null | undefined): value is RepeatMode {
   return value === 'off' || value === 'track' || value === 'queue'
 }
 
-function isControllerTab(value: string | null | undefined): value is ControllerTab {
+function isControllerTab(
+  value: string | null | undefined
+): value is ControllerTab {
   return value === 'playback' || value === 'settings'
 }
 
@@ -50,7 +58,9 @@ export function createMusicSettingsService(): MusicSettingsService {
 
     const { error } = await supabase.rpc('exec_sql', { sql })
     if (error !== null) {
-      throw new Error(`스키마 마이그레이션 실패: ${error.message}\n실행 SQL: ${sql}`)
+      throw new Error(
+        `스키마 마이그레이션 실패: ${error.message}\n실행 SQL: ${sql}`
+      )
     }
   }
 
@@ -60,7 +70,9 @@ export function createMusicSettingsService(): MusicSettingsService {
 
     const { data } = await supabase
       .from('music_settings')
-      .select('dj_channel_id, volume, repeat_mode, controller_tab, queue_visible')
+      .select(
+        'dj_channel_id, volume, repeat_mode, controller_tab, queue_visible'
+      )
       .eq('guild_id', guildId)
       .maybeSingle()
 
@@ -72,12 +84,18 @@ export function createMusicSettingsService(): MusicSettingsService {
       djChannelId: data.dj_channel_id ?? null,
       volume: typeof data.volume === 'number' ? data.volume : null,
       repeatMode: isRepeatMode(data.repeat_mode) ? data.repeat_mode : null,
-      controllerTab: isControllerTab(data.controller_tab) ? data.controller_tab : null,
-      queueVisible: typeof data.queue_visible === 'boolean' ? data.queue_visible : null,
+      controllerTab: isControllerTab(data.controller_tab)
+        ? data.controller_tab
+        : null,
+      queueVisible:
+        typeof data.queue_visible === 'boolean' ? data.queue_visible : null,
     }
   }
 
-  async function patchSettings(guildId: string, patch: Partial<MusicSettings>): Promise<void> {
+  async function patchSettings(
+    guildId: string,
+    patch: Partial<MusicSettings>
+  ): Promise<void> {
     const supabase = getSupabase()
     if (supabase === null) return
 
@@ -100,7 +118,10 @@ export function createMusicSettingsService(): MusicSettingsService {
     return settings.djChannelId
   }
 
-  async function setDjChannelId(guildId: string, channelId: string | null): Promise<void> {
+  async function setDjChannelId(
+    guildId: string,
+    channelId: string | null
+  ): Promise<void> {
     await patchSettings(guildId, { djChannelId: channelId })
   }
 

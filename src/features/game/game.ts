@@ -43,11 +43,17 @@ export function rollDice(input: DiceRollInput): DiceRoll {
   }
 }
 
-export function playRockPaperScissors(input: RockPaperScissorsInput): RockPaperScissorsRound {
+export function playRockPaperScissors(
+  input: RockPaperScissorsInput
+): RockPaperScissorsRound {
   const botMove = pickMove(input.random)
   const result = compareMoves(input.move, botMove)
   const resultLabel =
-    result === 'draw' ? '비겼어요.' : result === 'win' ? '승리했어요!' : '패배했어요.'
+    result === 'draw'
+      ? '비겼어요.'
+      : result === 'win'
+      ? '승리했어요!'
+      : '패배했어요.'
 
   return {
     botMove,
@@ -70,7 +76,7 @@ function pickMove(random: RandomSource): RockPaperScissorsMove {
 
 function compareMoves(
   userMove: RockPaperScissorsMove,
-  botMove: RockPaperScissorsMove,
+  botMove: RockPaperScissorsMove
 ): RockPaperScissorsResult {
   if (userMove === botMove) {
     return 'draw'
@@ -153,7 +159,10 @@ export type SlotResult = {
   readonly message: string
 }
 
-export function playSlot(input: { random: RandomSource; bet: number }): SlotResult {
+export function playSlot(input: {
+  random: RandomSource
+  bet: number
+}): SlotResult {
   const { random, bet } = input
 
   if (!Number.isInteger(bet) || bet <= 0) {
@@ -189,7 +198,14 @@ export function playSlot(input: { random: RandomSource; bet: number }): SlotResu
     payout = Math.floor(bet * multiplier)
   }
 
-  const matchLabel = matchCount >= 5 ? '5칸 전부 일치' : matchCount >= 4 ? '4칸 일치' : matchCount >= 3 ? '3칸 일치' : '미당첨'
+  const matchLabel =
+    matchCount >= 5
+      ? '5칸 전부 일치'
+      : matchCount >= 4
+      ? '4칸 일치'
+      : matchCount >= 3
+      ? '3칸 일치'
+      : '미당첨'
 
   return {
     reels,
@@ -211,7 +227,10 @@ function countMaxSymbol(reels: string[]): number {
   return Math.max(...counts.values())
 }
 
-function findDominantSymbol(reels: string[], minCount: number): SlotSymbol | undefined {
+function findDominantSymbol(
+  reels: string[],
+  minCount: number
+): SlotSymbol | undefined {
   const counts = new Map<string, number>()
   for (const r of reels) {
     counts.set(r, (counts.get(r) ?? 0) + 1)
@@ -295,13 +314,19 @@ export function playRoulette(input: {
     win,
     payout,
     message: win
-      ? `🎡 결과: ${number} (${color})\n${String(betType)} 적중! ${multiplier}x → ${payout.toLocaleString()}원 획득!`
-      : `🎡 결과: ${number} (${color})\n${String(betType)} 실패. 베팅 ${bet.toLocaleString()}원을 잃었어요.`,
+      ? `🎡 결과: ${number} (${color})\n${String(
+          betType
+        )} 적중! ${multiplier}x → ${payout.toLocaleString()}원 획득!`
+      : `🎡 결과: ${number} (${color})\n${String(
+          betType
+        )} 실패. 베팅 ${bet.toLocaleString()}원을 잃었어요.`,
   }
 }
 
 function rouletteColor(number: number): string {
   if (number === 0) return '초록'
-  const redNumbers = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]
+  const redNumbers = [
+    1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36,
+  ]
   return redNumbers.includes(number) ? '빨강' : '검정'
 }

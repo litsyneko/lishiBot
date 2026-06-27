@@ -1,19 +1,28 @@
-import { Extension, SubCommandGroup, option } from '@pikokr/command.ts'
-import { ApplicationCommandOptionType, ChatInputCommandInteraction } from 'discord.js'
-import { requireServerManager } from '../utils/permissions'
-import { replyPublic } from '../utils/replies'
+import { createEconomyService } from '../features/economy/economy'
 import {
   disableSoundboardGuard,
   enableSoundboardGuard,
   isSoundboardGuardEnabled,
 } from '../features/soundboard/soundboardGuardStore'
-import { createEconomyService } from '../features/economy/economy'
+import { requireServerManager } from '../utils/permissions'
+import { replyPublic } from '../utils/replies'
+import { Extension, SubCommandGroup, option } from '@pikokr/command.ts'
+import {
+  ApplicationCommandOptionType,
+  ChatInputCommandInteraction,
+} from 'discord.js'
 
-const adminGroup = new SubCommandGroup({ name: '서버', description: 'FullMoon 서버 관리 명령어' })
+const adminGroup = new SubCommandGroup({
+  name: '서버',
+  description: 'FullMoon 서버 관리 명령어',
+})
 const economy = createEconomyService()
 
 class AdminExtensionClass extends Extension {
-  @adminGroup.command({ name: '사운드보드', description: '사운드보드 스팸 방지 기능을 켜거나 끕니다.' })
+  @adminGroup.command({
+    name: '사운드보드',
+    description: '사운드보드 스팸 방지 기능을 켜거나 끕니다.',
+  })
   async toggleSoundboardGuard(i: ChatInputCommandInteraction) {
     requireServerManager(i)
 
@@ -27,11 +36,18 @@ class AdminExtensionClass extends Extension {
       await replyPublic(i, '🔇 사운드보드 스팸 방지를 **해제**했어요.')
     } else {
       await enableSoundboardGuard(guild.id)
-      await replyPublic(i, '🔊 사운드보드 스팸 방지를 **활성화**했어요.\n10초 내 15회 초과 사용 시 30초 음소거됩니다.')
+      await replyPublic(
+        i,
+        '🔊 사운드보드 스팸 방지를 **활성화**했어요.\n10초 내 15회 초과 사용 시 30초 음소거됩니다.'
+      )
     }
   }
 
-  @adminGroup.command({ name: '선착보상', description: '선착 보상 설정을 켜거나 끕니다. (기본: 4시~23시, 4회, 1천~5만원)' })
+  @adminGroup.command({
+    name: '선착보상',
+    description:
+      '선착 보상 설정을 켜거나 끕니다. (기본: 4시~23시, 4회, 1천~5만원)',
+  })
   async toggleRandomDrop(
     i: ChatInputCommandInteraction,
     @option({
@@ -75,6 +91,13 @@ class AdminExtensionClass extends Extension {
       required: false,
     })
     endHour: number,
+    @option({
+      type: ApplicationCommandOptionType.Channel,
+      name: '관리채널',
+      description: '오늘 예정 드롭 시간 알림을 받을 채널',
+      required: false,
+    })
+    _adminChannel: unknown
   ) {
     requireServerManager(i)
 
@@ -96,6 +119,9 @@ class AdminExtensionClass extends Extension {
       const end = endHour || settings?.endHour || 23
       const targetChannel = i.options.getChannel('채널', false)
       const channelId = targetChannel?.id ?? settings?.channelId ?? null
+      const adminChannel = i.options.getChannel('관리채널', false)
+      const adminChannelId =
+        adminChannel?.id ?? settings?.adminChannelId ?? null
 
       await economy.setRandomDropSettings(guild.id, {
         enabled: true,
@@ -104,10 +130,17 @@ class AdminExtensionClass extends Extension {
         startHour: start,
         endHour: end,
         channelId,
+        adminChannelId,
       })
 
       const channelLabel = channelId ? `<#${channelId}>` : '시스템 채널'
-      await replyPublic(i, `🎁 선착 보상을 **활성화**했어요.\n전송 채널: ${channelLabel}\n지급 금액: ${min.toLocaleString()}원 ~ ${max.toLocaleString()}원\n${start}시~${end}시 사이에 하루 4회 랜덤 발송, 선착 4명 수령`)
+      const adminLabel = adminChannelId
+        ? `<#${adminChannelId}>`
+        : '미설정 (알림 없음)'
+      await replyPublic(
+        i,
+        `🎁 선착 보상을 **활성화**했어요.\n전송 채널: ${channelLabel}\n관리 채널: ${adminLabel}\n지급 금액: ${min.toLocaleString()}원 ~ ${max.toLocaleString()}원\n${start}시~${end}시 사이에 하루 4회 랜덤 발송, 선착 4명 수령`
+      )
     }
   }
 }

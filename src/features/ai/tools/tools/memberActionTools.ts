@@ -1,6 +1,10 @@
-import { Client } from 'discord.js'
-import type { ToolDefinition, ToolExecutionContext, ToolResult } from '../toolTypes'
 import { resolveGuild } from '../helpers/resolveGuild'
+import type {
+  ToolDefinition,
+  ToolExecutionContext,
+  ToolResult,
+} from '../toolTypes'
+import { Client } from 'discord.js'
 
 export function timeoutMemberTool(client: Client): ToolDefinition {
   return {
@@ -17,7 +21,8 @@ export function timeoutMemberTool(client: Client): ToolDefinition {
           },
           duration_seconds: {
             type: 'integer',
-            description: '타임아웃 지속 시간 (초). 예: 60=1분, 3600=1시간, 86400=1일',
+            description:
+              '타임아웃 지속 시간 (초). 예: 60=1분, 3600=1시간, 86400=1일',
           },
           reason: {
             type: 'string',
@@ -34,37 +39,55 @@ export function timeoutMemberTool(client: Client): ToolDefinition {
     },
     async execute(
       args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const memberId = (args.member_id as string | undefined)?.trim()
         const durationSeconds = Number(args.duration_seconds)
-        const reason = (args.reason as string | undefined)?.trim() ?? 'AI 리시가 적용'
+        const reason =
+          (args.reason as string | undefined)?.trim() ?? 'AI 리시가 적용'
 
         if (!memberId) {
           return { success: false, message: '멤버 ID를 입력해 주세요.' }
         }
         if (!Number.isInteger(durationSeconds) || durationSeconds <= 0) {
-          return { success: false, message: '지속 시간은 1초 이상의 정수로 입력해 주세요.' }
+          return {
+            success: false,
+            message: '지속 시간은 1초 이상의 정수로 입력해 주세요.',
+          }
         }
         if (durationSeconds > 28 * 24 * 60 * 60) {
-          return { success: false, message: '최대 28일(2419200초)까지 가능해요.' }
+          return {
+            success: false,
+            message: '최대 28일(2419200초)까지 가능해요.',
+          }
         }
 
         const guild = await resolveGuild(client, context)
 
-        const member = await guild.members.fetch(memberId).catch(() => undefined)
+        const member = await guild.members
+          .fetch(memberId)
+          .catch(() => undefined)
         if (member === undefined) {
           return { success: false, message: '멤버를 찾을 수 없어요.' }
         }
 
         if (guild.ownerId === member.id) {
-          return { success: false, message: '서버 주인에게는 타임아웃을 할 수 없어요.' }
+          return {
+            success: false,
+            message: '서버 주인에게는 타임아웃을 할 수 없어요.',
+          }
         }
 
         const me = guild.members.me
-        if (me !== null && me.roles.highest.comparePositionTo(member.roles.highest) <= 0) {
-          return { success: false, message: '리시보다 권한이 높거나 같은 멤버에게는 작업할 수 없어요.' }
+        if (
+          me !== null &&
+          me.roles.highest.comparePositionTo(member.roles.highest) <= 0
+        ) {
+          return {
+            success: false,
+            message: '리시보다 권한이 높거나 같은 멤버에게는 작업할 수 없어요.',
+          }
         }
 
         const durationMs = durationSeconds * 1000
@@ -79,7 +102,10 @@ export function timeoutMemberTool(client: Client): ToolDefinition {
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
-        return { success: false, message: `타임아웃 중 오류가 발생했어요: ${message}` }
+        return {
+          success: false,
+          message: `타임아웃 중 오류가 발생했어요: ${message}`,
+        }
       }
     },
   }
@@ -108,7 +134,7 @@ export function removeTimeoutMemberTool(client: Client): ToolDefinition {
     },
     async execute(
       args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const memberId = (args.member_id as string | undefined)?.trim()
@@ -118,13 +144,18 @@ export function removeTimeoutMemberTool(client: Client): ToolDefinition {
 
         const guild = await resolveGuild(client, context)
 
-        const member = await guild.members.fetch(memberId).catch(() => undefined)
+        const member = await guild.members
+          .fetch(memberId)
+          .catch(() => undefined)
         if (member === undefined) {
           return { success: false, message: '멤버를 찾을 수 없어요.' }
         }
 
         if (!member.isCommunicationDisabled()) {
-          return { success: false, message: `${member.displayName} 님은 타임아웃 상태가 아니에요.` }
+          return {
+            success: false,
+            message: `${member.displayName} 님은 타임아웃 상태가 아니에요.`,
+          }
         }
 
         await member.timeout(null, 'AI 리시가 해제')
@@ -138,7 +169,10 @@ export function removeTimeoutMemberTool(client: Client): ToolDefinition {
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
-        return { success: false, message: `타임아웃 해제 중 오류가 발생했어요: ${message}` }
+        return {
+          success: false,
+          message: `타임아웃 해제 중 오류가 발생했어요: ${message}`,
+        }
       }
     },
   }
@@ -148,7 +182,8 @@ export function banMemberTool(client: Client): ToolDefinition {
   return {
     declaration: {
       name: 'ban_member',
-      description: '멤버를 서버에서 차단(ban)합니다. 차단 시 최근 메시지를 삭제할 수 있어요.',
+      description:
+        '멤버를 서버에서 차단(ban)합니다. 차단 시 최근 메시지를 삭제할 수 있어요.',
       parameters: {
         type: 'object',
         properties: {
@@ -162,7 +197,8 @@ export function banMemberTool(client: Client): ToolDefinition {
           },
           delete_message_seconds: {
             type: 'integer',
-            description: '최근 메시지 삭제 범위 (초, 최대 604800=7일, 기본값 0)',
+            description:
+              '최근 메시지 삭제 범위 (초, 최대 604800=7일, 기본값 0)',
           },
         },
         required: ['member_id'],
@@ -175,14 +211,15 @@ export function banMemberTool(client: Client): ToolDefinition {
     },
     async execute(
       args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const memberId = (args.member_id as string | undefined)?.trim()
-        const reason = (args.reason as string | undefined)?.trim() ?? 'AI 리시가 적용'
+        const reason =
+          (args.reason as string | undefined)?.trim() ?? 'AI 리시가 적용'
         const deleteMessageSeconds = Math.min(
           Math.max(Number(args.delete_message_seconds ?? 0), 0),
-          604800,
+          604800
         )
 
         if (!memberId) {
@@ -195,17 +232,26 @@ export function banMemberTool(client: Client): ToolDefinition {
           return { success: false, message: '서버 주인을 차단할 수 없어요.' }
         }
 
-        const member = await guild.members.fetch(memberId).catch(() => undefined)
+        const member = await guild.members
+          .fetch(memberId)
+          .catch(() => undefined)
         if (member !== undefined) {
           const me = guild.members.me
-          if (me !== null && me.roles.highest.comparePositionTo(member.roles.highest) <= 0) {
-            return { success: false, message: '리시보다 권한이 높거나 같은 멤버를 차단할 수 없어요.' }
+          if (
+            me !== null &&
+            me.roles.highest.comparePositionTo(member.roles.highest) <= 0
+          ) {
+            return {
+              success: false,
+              message: '리시보다 권한이 높거나 같은 멤버를 차단할 수 없어요.',
+            }
           }
         }
 
         await guild.members.ban(memberId, {
           reason,
-          deleteMessageSeconds: deleteMessageSeconds > 0 ? deleteMessageSeconds : undefined,
+          deleteMessageSeconds:
+            deleteMessageSeconds > 0 ? deleteMessageSeconds : undefined,
         })
 
         const summary = `<@${memberId}> 님을 차단했어요.`
@@ -217,7 +263,10 @@ export function banMemberTool(client: Client): ToolDefinition {
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
-        return { success: false, message: `차단 중 오류가 발생했어요: ${message}` }
+        return {
+          success: false,
+          message: `차단 중 오류가 발생했어요: ${message}`,
+        }
       }
     },
   }
@@ -246,7 +295,7 @@ export function unbanMemberTool(client: Client): ToolDefinition {
     },
     async execute(
       args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const memberId = (args.member_id as string | undefined)?.trim()
@@ -268,7 +317,10 @@ export function unbanMemberTool(client: Client): ToolDefinition {
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
-        return { success: false, message: `차단 해제 중 오류가 발생했어요: ${message}` }
+        return {
+          success: false,
+          message: `차단 해제 중 오류가 발생했어요: ${message}`,
+        }
       }
     },
   }
@@ -278,7 +330,8 @@ export function kickMemberTool(client: Client): ToolDefinition {
   return {
     declaration: {
       name: 'kick_member',
-      description: '멤버를 서버에서 추방(kick)합니다. 다시 초대하면 돌아올 수 있어요.',
+      description:
+        '멤버를 서버에서 추방(kick)합니다. 다시 초대하면 돌아올 수 있어요.',
       parameters: {
         type: 'object',
         properties: {
@@ -301,11 +354,12 @@ export function kickMemberTool(client: Client): ToolDefinition {
     },
     async execute(
       args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const memberId = (args.member_id as string | undefined)?.trim()
-        const reason = (args.reason as string | undefined)?.trim() ?? 'AI 리시가 적용'
+        const reason =
+          (args.reason as string | undefined)?.trim() ?? 'AI 리시가 적용'
 
         if (!memberId) {
           return { success: false, message: '멤버 ID를 입력해 주세요.' }
@@ -313,7 +367,9 @@ export function kickMemberTool(client: Client): ToolDefinition {
 
         const guild = await resolveGuild(client, context)
 
-        const member = await guild.members.fetch(memberId).catch(() => undefined)
+        const member = await guild.members
+          .fetch(memberId)
+          .catch(() => undefined)
         if (member === undefined) {
           return { success: false, message: '멤버를 찾을 수 없어요.' }
         }
@@ -323,8 +379,14 @@ export function kickMemberTool(client: Client): ToolDefinition {
         }
 
         const me = guild.members.me
-        if (me !== null && me.roles.highest.comparePositionTo(member.roles.highest) <= 0) {
-          return { success: false, message: '리시보다 권한이 높거나 같은 멤버를 추방할 수 없어요.' }
+        if (
+          me !== null &&
+          me.roles.highest.comparePositionTo(member.roles.highest) <= 0
+        ) {
+          return {
+            success: false,
+            message: '리시보다 권한이 높거나 같은 멤버를 추방할 수 없어요.',
+          }
         }
 
         await member.kick(reason)
@@ -338,7 +400,10 @@ export function kickMemberTool(client: Client): ToolDefinition {
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
-        return { success: false, message: `추방 중 오류가 발생했어요: ${message}` }
+        return {
+          success: false,
+          message: `추방 중 오류가 발생했어요: ${message}`,
+        }
       }
     },
   }

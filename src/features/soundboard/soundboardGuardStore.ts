@@ -1,5 +1,5 @@
-import { getSupabase } from '../ai/supabase'
 import { logger } from '../../utils/logger'
+import { getSupabase } from '../ai/supabase'
 
 const SETTINGS_TABLE = 'soundboard_guard_settings'
 

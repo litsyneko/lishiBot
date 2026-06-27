@@ -1,8 +1,18 @@
-import { Client, type VoiceBasedChannel } from 'discord.js'
-import type { ToolDefinition, ToolExecutionContext, ToolResult } from '../toolTypes'
 import { resolveGuild } from '../helpers/resolveGuild'
+import type {
+  ToolDefinition,
+  ToolExecutionContext,
+  ToolResult,
+} from '../toolTypes'
+import { Client, type VoiceBasedChannel } from 'discord.js'
 
-type VoiceAction = 'mute' | 'unmute' | 'deafen' | 'undeafen' | 'move' | 'disconnect'
+type VoiceAction =
+  | 'mute'
+  | 'unmute'
+  | 'deafen'
+  | 'undeafen'
+  | 'move'
+  | 'disconnect'
 
 export function voiceMemberLookupTool(client: Client): ToolDefinition {
   return {
@@ -28,14 +38,14 @@ export function voiceMemberLookupTool(client: Client): ToolDefinition {
     },
     async execute(
       args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const guild = await resolveGuild(client, context)
         const channelId = (args.channel_id as string | undefined)?.trim()
 
         const voiceChannels = [...guild.channels.cache.values()].filter(
-          (c): c is VoiceBasedChannel => c.isVoiceBased(),
+          (c): c is VoiceBasedChannel => c.isVoiceBased()
         )
 
         const targetChannels = channelId
@@ -86,11 +96,21 @@ export function voiceMemberLookupTool(client: Client): ToolDefinition {
           }
         }
 
-        const totalMembers = results.reduce((sum, r) => sum + r.members.length, 0)
-        const summaryLines = results.flatMap((r) =>
-          r.members.map((m) => `- ${m.name}${m.isBot ? ' (봇)' : ''} @ ${r.channelName}${m.muted ? ' [음소거]' : ''}${m.streaming ? ' [방송중]' : ''}`),
+        const totalMembers = results.reduce(
+          (sum, r) => sum + r.members.length,
+          0
         )
-        const summary = `음성 채널 ${results.length}개, ${totalMembers}명:\n${summaryLines.join('\n')}`
+        const summaryLines = results.flatMap((r) =>
+          r.members.map(
+            (m) =>
+              `- ${m.name}${m.isBot ? ' (봇)' : ''} @ ${r.channelName}${
+                m.muted ? ' [음소거]' : ''
+              }${m.streaming ? ' [방송중]' : ''}`
+          )
+        )
+        const summary = `음성 채널 ${
+          results.length
+        }개, ${totalMembers}명:\n${summaryLines.join('\n')}`
 
         return {
           success: true,
@@ -100,7 +120,10 @@ export function voiceMemberLookupTool(client: Client): ToolDefinition {
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
-        return { success: false, message: `음성 멤버 조회 중 오류가 발생했어요: ${message}` }
+        return {
+          success: false,
+          message: `음성 멤버 조회 중 오류가 발생했어요: ${message}`,
+        }
       }
     },
   }
@@ -118,7 +141,14 @@ export function voiceActionTool(client: Client): ToolDefinition {
           action: {
             type: 'string',
             description: '수행할 액션',
-            enum: ['mute', 'unmute', 'deafen', 'undeafen', 'move', 'disconnect'],
+            enum: [
+              'mute',
+              'unmute',
+              'deafen',
+              'undeafen',
+              'move',
+              'disconnect',
+            ],
           },
           member_id: {
             type: 'string',
@@ -139,34 +169,49 @@ export function voiceActionTool(client: Client): ToolDefinition {
     },
     async execute(
       args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const action = args.action as VoiceAction | undefined
         const memberId = (args.member_id as string | undefined)?.trim()
 
         if (!action || !memberId) {
-          return { success: false, message: 'action과 member_id를 입력해 주세요.' }
+          return {
+            success: false,
+            message: 'action과 member_id를 입력해 주세요.',
+          }
         }
 
         const guild = await resolveGuild(client, context)
 
-        const member = await guild.members.fetch(memberId).catch(() => undefined)
+        const member = await guild.members
+          .fetch(memberId)
+          .catch(() => undefined)
         if (member === undefined) {
           return { success: false, message: '멤버를 찾을 수 없어요.' }
         }
 
         if (!member.voice.channel) {
-          return { success: false, message: `${member.displayName} 님은 음성 채널에 없어요.` }
+          return {
+            success: false,
+            message: `${member.displayName} 님은 음성 채널에 없어요.`,
+          }
         }
 
         const me = guild.members.me
         if (me !== null) {
           if (guild.ownerId === member.id) {
-            return { success: false, message: '서버 주인에게는 이 작업을 할 수 없어요.' }
+            return {
+              success: false,
+              message: '서버 주인에게는 이 작업을 할 수 없어요.',
+            }
           }
           if (me.roles.highest.comparePositionTo(member.roles.highest) <= 0) {
-            return { success: false, message: '리시보다 권한이 높거나 같은 멤버에게는 작업할 수 없어요.' }
+            return {
+              success: false,
+              message:
+                '리시보다 권한이 높거나 같은 멤버에게는 작업할 수 없어요.',
+            }
           }
         }
 
@@ -193,13 +238,21 @@ export function voiceActionTool(client: Client): ToolDefinition {
             await member.voice.setDeaf(false, 'AI 리시가 적용')
             break
           case 'move': {
-            const targetChannelId = (args.target_channel_id as string | undefined)?.trim()
+            const targetChannelId = (
+              args.target_channel_id as string | undefined
+            )?.trim()
             if (!targetChannelId) {
-              return { success: false, message: '이동할 채널 ID(target_channel_id)를 입력해 주세요.' }
+              return {
+                success: false,
+                message: '이동할 채널 ID(target_channel_id)를 입력해 주세요.',
+              }
             }
             const targetChannel = guild.channels.cache.get(targetChannelId)
             if (targetChannel === undefined || !targetChannel.isVoiceBased()) {
-              return { success: false, message: '유효한 음성 채널 ID를 입력해 주세요.' }
+              return {
+                success: false,
+                message: '유효한 음성 채널 ID를 입력해 주세요.',
+              }
             }
             await member.voice.setChannel(targetChannelId, 'AI 리시가 적용')
             break
@@ -218,7 +271,10 @@ export function voiceActionTool(client: Client): ToolDefinition {
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
-        return { success: false, message: `음성 액션 중 오류가 발생했어요: ${message}` }
+        return {
+          success: false,
+          message: `음성 액션 중 오류가 발생했어요: ${message}`,
+        }
       }
     },
   }

@@ -1,13 +1,24 @@
-import { ChannelType, Client, Collection, GuildBasedChannel, PermissionFlagsBits, TextChannel, NewsChannel, type Message } from 'discord.js'
-import { Routes } from 'discord-api-types/v10'
-import type { ToolDefinition, ToolExecutionContext, ToolResult } from '../toolTypes'
 import { resolveGuild } from '../helpers/resolveGuild'
+import type {
+  ToolDefinition,
+  ToolExecutionContext,
+  ToolResult,
+} from '../toolTypes'
+import { Routes } from 'discord-api-types/v10'
+import {
+  ChannelType,
+  Client,
+  Collection,
+  GuildBasedChannel,
+  type Message,
+  PermissionFlagsBits,
+} from 'discord.js'
 
 // ─── Helpers ───
 
 function findChannelByName(
   channels: Iterable<GuildBasedChannel>,
-  name: string,
+  name: string
 ): GuildBasedChannel | undefined {
   const lower = name.toLowerCase()
   for (const c of channels) {
@@ -22,7 +33,8 @@ export function createChannelTool(client: Client): ToolDefinition {
   return {
     declaration: {
       name: 'create_channel',
-      description: '서버에 새로운 채널을 생성합니다. 텍스트 또는 음성 채널을 만들 수 있어요.',
+      description:
+        '서버에 새로운 채널을 생성합니다. 텍스트 또는 음성 채널을 만들 수 있어요.',
       parameters: {
         type: 'object',
         properties: {
@@ -50,7 +62,7 @@ export function createChannelTool(client: Client): ToolDefinition {
     },
     async execute(
       args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const name = args.name as string
@@ -122,7 +134,7 @@ export function deleteChannelTool(client: Client): ToolDefinition {
     },
     async execute(
       args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const channelId = args.channelId as string | undefined
@@ -161,12 +173,9 @@ export function deleteChannelTool(client: Client): ToolDefinition {
 
         // 유일한 텍스트 채널은 삭제 금지
         const textChannels = guild.channels.cache.filter(
-          (c) => c.type === ChannelType.GuildText,
+          (c) => c.type === ChannelType.GuildText
         )
-        if (
-          target.type === ChannelType.GuildText &&
-          textChannels.size <= 1
-        ) {
+        if (target.type === ChannelType.GuildText && textChannels.size <= 1) {
           return {
             success: false,
             message: '서버의 유일한 텍스트 채널은 삭제할 수 없어요.',
@@ -265,7 +274,7 @@ export function editChannelTool(client: Client): ToolDefinition {
     },
     async execute(
       args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const channelId = args.channelId as string | undefined
@@ -281,7 +290,10 @@ export function editChannelTool(client: Client): ToolDefinition {
         const status = args.status as string | undefined
 
         if (!channelId && !channelName) {
-          return { success: false, message: 'channelId 또는 channelName 중 하나는 필요해요.' }
+          return {
+            success: false,
+            message: 'channelId 또는 channelName 중 하나는 필요해요.',
+          }
         }
 
         if (
@@ -297,7 +309,8 @@ export function editChannelTool(client: Client): ToolDefinition {
         ) {
           return {
             success: false,
-            message: '수정할 속성을 최소 하나 제공해야 해요 (name, topic, slowmode, nsfw, bitrate, userLimit, parent, position, status).',
+            message:
+              '수정할 속성을 최소 하나 제공해야 해요 (name, topic, slowmode, nsfw, bitrate, userLimit, parent, position, status).',
           }
         }
 
@@ -308,7 +321,10 @@ export function editChannelTool(client: Client): ToolDefinition {
           channel = guild.channels.cache.get(channelId)
         }
         if (!channel && channelName) {
-          channel = findChannelByName(guild.channels.cache.values(), channelName)
+          channel = findChannelByName(
+            guild.channels.cache.values(),
+            channelName
+          )
         }
 
         if (!channel) {
@@ -330,8 +346,15 @@ export function editChannelTool(client: Client): ToolDefinition {
           }
           if (slowmode !== undefined) {
             const slowmodeNum = Number(slowmode)
-            if (!Number.isInteger(slowmodeNum) || slowmodeNum < 0 || slowmodeNum > 21600) {
-              return { success: false, message: 'slowmode는 0-21600 사이의 정수여야 해요.' }
+            if (
+              !Number.isInteger(slowmodeNum) ||
+              slowmodeNum < 0 ||
+              slowmodeNum > 21600
+            ) {
+              return {
+                success: false,
+                message: 'slowmode는 0-21600 사이의 정수여야 해요.',
+              }
             }
             editPayload.rateLimitPerUser = slowmodeNum
           }
@@ -343,15 +366,29 @@ export function editChannelTool(client: Client): ToolDefinition {
         if (isVoiceChannel) {
           if (bitrate !== undefined) {
             const bitrateNum = Number(bitrate)
-            if (!Number.isInteger(bitrateNum) || bitrateNum < 8000 || bitrateNum > 96000) {
-              return { success: false, message: 'bitrate는 8000-96000 사이의 정수여야 해요.' }
+            if (
+              !Number.isInteger(bitrateNum) ||
+              bitrateNum < 8000 ||
+              bitrateNum > 96000
+            ) {
+              return {
+                success: false,
+                message: 'bitrate는 8000-96000 사이의 정수여야 해요.',
+              }
             }
             editPayload.bitrate = bitrateNum
           }
           if (userLimit !== undefined) {
             const userLimitNum = Number(userLimit)
-            if (!Number.isInteger(userLimitNum) || userLimitNum < 0 || userLimitNum > 99) {
-              return { success: false, message: 'userLimit은 0-99 사이의 정수여야 해요.' }
+            if (
+              !Number.isInteger(userLimitNum) ||
+              userLimitNum < 0 ||
+              userLimitNum > 99
+            ) {
+              return {
+                success: false,
+                message: 'userLimit은 0-99 사이의 정수여야 해요.',
+              }
             }
             editPayload.userLimit = userLimitNum
           }
@@ -359,8 +396,14 @@ export function editChannelTool(client: Client): ToolDefinition {
 
         if (parent) {
           const parentCategory = guild.channels.cache.get(parent)
-          if (!parentCategory || parentCategory.type !== ChannelType.GuildCategory) {
-            return { success: false, message: '해당 카테고리를 찾을 수 없어요.' }
+          if (
+            !parentCategory ||
+            parentCategory.type !== ChannelType.GuildCategory
+          ) {
+            return {
+              success: false,
+              message: '해당 카테고리를 찾을 수 없어요.',
+            }
           }
           editPayload.parent = parentCategory.id
         }
@@ -368,17 +411,30 @@ export function editChannelTool(client: Client): ToolDefinition {
         if (position !== undefined) {
           const positionNum = Number(position)
           if (!Number.isInteger(positionNum) || positionNum < 0) {
-            return { success: false, message: 'position은 0 이상의 정수여야 해요.' }
+            return {
+              success: false,
+              message: 'position은 0 이상의 정수여야 해요.',
+            }
           }
           editPayload.position = positionNum
         }
 
         if (status !== undefined) {
-          if (channel.type !== ChannelType.GuildVoice && channel.type !== ChannelType.GuildStageVoice) {
-            return { success: false, message: 'status는 음성 채널 또는 스테이지 채널에서만 설정할 수 있어요.' }
+          if (
+            channel.type !== ChannelType.GuildVoice &&
+            channel.type !== ChannelType.GuildStageVoice
+          ) {
+            return {
+              success: false,
+              message:
+                'status는 음성 채널 또는 스테이지 채널에서만 설정할 수 있어요.',
+            }
           }
           if (status.length > 500) {
-            return { success: false, message: 'status는 최대 500자까지 입력할 수 있어요.' }
+            return {
+              success: false,
+              message: 'status는 최대 500자까지 입력할 수 있어요.',
+            }
           }
           await client.rest.put(Routes.channelVoiceStatus(channel.id), {
             body: { status: status.length === 0 ? null : status },
@@ -449,10 +505,11 @@ export function lookupChannelTool(client: Client): ToolDefinition {
     },
     async execute(
       args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
-        const channelId = (args.channelId as string | undefined) ?? context.channelId
+        const channelId =
+          (args.channelId as string | undefined) ?? context.channelId
         const channelName = args.channelName as string | undefined
 
         const guild = await resolveGuild(client, context)
@@ -499,8 +556,14 @@ export function lookupChannelTool(client: Client): ToolDefinition {
             typeCode: target.type,
             category: parentInfo,
             position: 'position' in target ? target.position : null,
-            topic: 'topic' in target ? (target as { topic?: string }).topic ?? null : null,
-            nsfw: 'nsfw' in target ? Boolean((target as { nsfw?: boolean }).nsfw) : null,
+            topic:
+              'topic' in target
+                ? (target as { topic?: string }).topic ?? null
+                : null,
+            nsfw:
+              'nsfw' in target
+                ? Boolean((target as { nsfw?: boolean }).nsfw)
+                : null,
             createdAt: target.createdAt?.toISOString() ?? null,
           },
           summary: summaryParts.join('\n'),
@@ -543,7 +606,7 @@ export function listChannelsTool(client: Client): ToolDefinition {
     },
     async execute(
       args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const type = args.type as 'text' | 'voice' | 'category' | undefined
@@ -575,12 +638,21 @@ export function listChannelsTool(client: Client): ToolDefinition {
           }))
 
         const typeIcon = (t: number) =>
-          t === ChannelType.GuildText ? '💬' :
-          t === ChannelType.GuildVoice ? '🔊' :
-          t === ChannelType.GuildCategory ? '📁' :
-          t === ChannelType.GuildAnnouncement ? '📢' : '📁'
+          t === ChannelType.GuildText
+            ? '💬'
+            : t === ChannelType.GuildVoice
+            ? '🔊'
+            : t === ChannelType.GuildCategory
+            ? '📁'
+            : t === ChannelType.GuildAnnouncement
+            ? '📢'
+            : '📁'
 
-        const summary = list.map((c) => `${typeIcon(c.type)} ${c.isCurrent ? '👉 ' : ''}${c.name}`).join('\n')
+        const summary = list
+          .map(
+            (c) => `${typeIcon(c.type)} ${c.isCurrent ? '👉 ' : ''}${c.name}`
+          )
+          .join('\n')
 
         return {
           success: true,
@@ -606,11 +678,17 @@ export function listChannelsTool(client: Client): ToolDefinition {
 
 type ReadableChannel = GuildBasedChannel & {
   messages: {
-    fetch: (opts: { limit: number; before?: string; after?: string }) => Promise<Collection<string, Message<true>>>
+    fetch: (opts: {
+      limit: number
+      before?: string
+      after?: string
+    }) => Promise<Collection<string, Message<true>>>
   }
 }
 
-function isReadableChannel(channel: GuildBasedChannel): channel is ReadableChannel {
+function isReadableChannel(
+  channel: GuildBasedChannel
+): channel is ReadableChannel {
   return channel.isTextBased()
 }
 
@@ -641,11 +719,13 @@ export function readChannelMessagesTool(client: Client): ToolDefinition {
           },
           before: {
             type: 'string',
-            description: '이 메시지 ID 이전의 메시지만 가져옴 (페이지네이션, 선택 사항)',
+            description:
+              '이 메시지 ID 이전의 메시지만 가져옴 (페이지네이션, 선택 사항)',
           },
           after: {
             type: 'string',
-            description: '이 메시지 ID 이후의 메시지만 가져옴 (페이지네이션, 선택 사항)',
+            description:
+              '이 메시지 ID 이후의 메시지만 가져옴 (페이지네이션, 선택 사항)',
           },
         },
         required: [],
@@ -658,7 +738,7 @@ export function readChannelMessagesTool(client: Client): ToolDefinition {
     },
     async execute(
       args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const channelId = args.channelId as string | undefined
@@ -668,7 +748,10 @@ export function readChannelMessagesTool(client: Client): ToolDefinition {
         const before = args.before as string | undefined
         const after = args.after as string | undefined
 
-        const limit = Number.isInteger(limitRaw) && limitRaw >= 1 && limitRaw <= 100 ? limitRaw : 50
+        const limit =
+          Number.isInteger(limitRaw) && limitRaw >= 1 && limitRaw <= 100
+            ? limitRaw
+            : 50
 
         const guild = await resolveGuild(client, context)
 
@@ -677,7 +760,10 @@ export function readChannelMessagesTool(client: Client): ToolDefinition {
           channel = guild.channels.cache.get(channelId)
         }
         if (!channel && channelName) {
-          channel = findChannelByName(guild.channels.cache.values(), channelName)
+          channel = findChannelByName(
+            guild.channels.cache.values(),
+            channelName
+          )
         }
         if (!channel && !channelId && !channelName) {
           channel = guild.channels.cache.get(context.channelId)
@@ -688,7 +774,10 @@ export function readChannelMessagesTool(client: Client): ToolDefinition {
         }
 
         if (!isReadableChannel(channel)) {
-          return { success: false, message: '이 채널에서는 메시지를 읽을 수 없어요.' }
+          return {
+            success: false,
+            message: '이 채널에서는 메시지를 읽을 수 없어요.',
+          }
         }
 
         const me = guild.members.me
@@ -698,11 +787,15 @@ export function readChannelMessagesTool(client: Client): ToolDefinition {
             return { success: false, message: '봇이 해당 채널을 볼 수 없어요.' }
           }
           if (perms && !perms.has(PermissionFlagsBits.ReadMessageHistory)) {
-            return { success: false, message: '봇이 메시지 기록을 읽을 권한이 없어요.' }
+            return {
+              success: false,
+              message: '봇이 메시지 기록을 읽을 권한이 없어요.',
+            }
           }
         }
 
-        const fetchOptions: { limit: number; before?: string; after?: string } = { limit }
+        const fetchOptions: { limit: number; before?: string; after?: string } =
+          { limit }
         if (before) fetchOptions.before = before
         if (after) fetchOptions.after = after
 
@@ -714,13 +807,24 @@ export function readChannelMessagesTool(client: Client): ToolDefinition {
           .map((m) => ({
             id: m.id,
             authorId: m.author.id,
-            authorName: m.member?.displayName ?? m.author.displayName ?? m.author.username,
+            authorName:
+              m.member?.displayName ??
+              m.author.displayName ??
+              m.author.username,
             isBot: m.author.bot,
-            content: m.content.length > 500 ? `${m.content.slice(0, 500)}...` : m.content,
+            content:
+              m.content.length > 500
+                ? `${m.content.slice(0, 500)}...`
+                : m.content,
             createdAt: m.createdAt.toISOString(),
-            attachments: m.attachments.size > 0
-              ? m.attachments.map((a) => ({ filename: a.name, url: a.url, contentType: a.contentType }))
-              : undefined,
+            attachments:
+              m.attachments.size > 0
+                ? m.attachments.map((a) => ({
+                    filename: a.name,
+                    url: a.url,
+                    contentType: a.contentType,
+                  }))
+                : undefined,
             embedCount: m.embeds.length,
             replyTo: m.reference?.messageId ?? undefined,
           }))
@@ -729,13 +833,20 @@ export function readChannelMessagesTool(client: Client): ToolDefinition {
           return {
             success: true,
             message: '읽을 메시지가 없어요.',
-            data: { count: 0, messages: [], channel: { id: channel.id, name: channel.name } },
+            data: {
+              count: 0,
+              messages: [],
+              channel: { id: channel.id, name: channel.name },
+            },
             summary: '메시지 없음',
           }
         }
 
         const summaryLines = messages.map((m) => {
-          const time = new Date(m.createdAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false })
+          const time = new Date(m.createdAt).toLocaleString('ko-KR', {
+            timeZone: 'Asia/Seoul',
+            hour12: false,
+          })
           const botTag = m.isBot ? ' [봇]' : ''
           return `[${time}] ${m.authorName}${botTag}: ${m.content}`
         })
@@ -749,10 +860,14 @@ export function readChannelMessagesTool(client: Client): ToolDefinition {
             channel: {
               id: channel.id,
               name: channel.name,
-              type: channel.type === ChannelType.GuildAnnouncement ? 'announcement'
-                : channel.type === ChannelType.GuildVoice ? 'voice'
-                : channel.type === ChannelType.GuildStageVoice ? 'stage'
-                : 'text',
+              type:
+                channel.type === ChannelType.GuildAnnouncement
+                  ? 'announcement'
+                  : channel.type === ChannelType.GuildVoice
+                  ? 'voice'
+                  : channel.type === ChannelType.GuildStageVoice
+                  ? 'stage'
+                  : 'text',
             },
             messages,
             hasMore: fetched.size === limit,

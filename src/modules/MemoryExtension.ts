@@ -1,15 +1,21 @@
+import { getMemoryStore } from '../features/ai/memoryStore'
 import { Extension, SubCommandGroup, option } from '@pikokr/command.ts'
 import {
   ApplicationCommandOptionType,
   ChatInputCommandInteraction,
   MessageFlags,
 } from 'discord.js'
-import { getMemoryStore } from '../features/ai/memoryStore'
 
-const memoryGroup = new SubCommandGroup({ name: 'memory', description: 'AI 메모리를 관리합니다' })
+const memoryGroup = new SubCommandGroup({
+  name: 'memory',
+  description: 'AI 메모리를 관리합니다',
+})
 
 class MemoryExtension extends Extension {
-  @memoryGroup.command({ name: 'list', description: '저장된 메모리를 확인합니다' })
+  @memoryGroup.command({
+    name: 'list',
+    description: '저장된 메모리를 확인합니다',
+  })
   async list(i: ChatInputCommandInteraction) {
     const store = getMemoryStore()
     if (!store.isAvailable()) {
@@ -31,15 +37,22 @@ class MemoryExtension extends Extension {
 
     const lines = memories.map(
       (m, idx) =>
-        `**${idx + 1}.** ${m.content}\n> 저장: <t:${Math.floor(new Date(m.createdAt).getTime() / 1000)}:R>`,
+        `**${idx + 1}.** ${m.content}\n> 저장: <t:${Math.floor(
+          new Date(m.createdAt).getTime() / 1000
+        )}:R>`
     )
     await i.reply({
-      content: `📝 AI가 기억하고 있는 내용이에요 (${memories.length}/15)\n\n${lines.join('\n')}`,
+      content: `📝 AI가 기억하고 있는 내용이에요 (${
+        memories.length
+      }/15)\n\n${lines.join('\n')}`,
       flags: MessageFlags.Ephemeral,
     })
   }
 
-  @memoryGroup.command({ name: 'delete', description: '특정 메모리를 삭제합니다' })
+  @memoryGroup.command({
+    name: 'delete',
+    description: '특정 메모리를 삭제합니다',
+  })
   async delete(
     i: ChatInputCommandInteraction,
     @option({
@@ -49,7 +62,7 @@ class MemoryExtension extends Extension {
       required: true,
       min_value: 1,
     })
-    number: number,
+    number: number
   ) {
     const store = getMemoryStore()
     if (!store.isAvailable()) {
@@ -72,12 +85,17 @@ class MemoryExtension extends Extension {
 
     await store.remove(i.user.id, target.id)
     await i.reply({
-      content: `🗑️ "${target.content.slice(0, 50)}${target.content.length > 50 ? '...' : ''}" 메모리를 삭제했어요.`,
+      content: `🗑️ "${target.content.slice(0, 50)}${
+        target.content.length > 50 ? '...' : ''
+      }" 메모리를 삭제했어요.`,
       flags: MessageFlags.Ephemeral,
     })
   }
 
-  @memoryGroup.command({ name: 'clear', description: '모든 메모리를 초기화합니다' })
+  @memoryGroup.command({
+    name: 'clear',
+    description: '모든 메모리를 초기화합니다',
+  })
   async clear(i: ChatInputCommandInteraction) {
     const store = getMemoryStore()
     if (!store.isAvailable()) {

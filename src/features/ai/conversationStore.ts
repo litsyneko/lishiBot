@@ -21,7 +21,10 @@ function isExpired(session: Session, now: number = Date.now()): boolean {
 }
 
 function isOrphaned(session: Session, now: number = Date.now()): boolean {
-  return session.messageIds.size === 0 && now - session.lastActivity > ORPHAN_SESSION_TTL_MS
+  return (
+    session.messageIds.size === 0 &&
+    now - session.lastActivity > ORPHAN_SESSION_TTL_MS
+  )
 }
 
 function deleteSession(sessionKey: string): void {
@@ -38,7 +41,11 @@ function deleteSession(sessionKey: string): void {
   sessions.delete(sessionKey)
 }
 
-function bindMessage(sessionKey: string, session: Session, messageId: string): void {
+function bindMessage(
+  sessionKey: string,
+  session: Session,
+  messageId: string
+): void {
   session.messageIds.add(messageId)
   messageIdToSession.set(messageId, sessionKey)
 }
@@ -66,7 +73,7 @@ function getOrCreateSession(guildId: string, userId: string): string {
 }
 
 function getSessionByMessage(
-  messageId: string,
+  messageId: string
 ): { sessionKey: string; session: Session } | undefined {
   const sessionKey = messageIdToSession.get(messageId)
   if (sessionKey === undefined) {
@@ -91,7 +98,7 @@ function reviveSession(sessionKey: string): void {
 function appendToSession(
   sessionKey: string,
   message: ChatMessage,
-  botMessageId?: string,
+  botMessageId?: string
 ): void {
   const session = sessions.get(sessionKey)
   if (session === undefined) {
@@ -117,7 +124,10 @@ function getHistory(sessionKey: string): readonly ChatMessage[] {
   return session.history
 }
 
-function appendToToolHistory(sessionKey: string, records: readonly ToolRecord[]): void {
+function appendToToolHistory(
+  sessionKey: string,
+  records: readonly ToolRecord[]
+): void {
   const session = sessions.get(sessionKey)
   if (session === undefined) {
     return

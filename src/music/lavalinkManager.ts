@@ -1,5 +1,5 @@
-import { LavalinkManager } from 'lavalink-client'
 import { CustomPlayer } from './customPlayer'
+import { LavalinkManager } from 'lavalink-client'
 
 export type LavalinkNodeInput = {
   readonly host: string
@@ -26,7 +26,9 @@ export type LavalinkManagerInput = {
   readonly sendToShard: (guildId: string, payload: unknown) => void
 }
 
-export function createLavalinkNodeOptions(input: LavalinkNodeInput): LavalinkNodeOptions {
+export function createLavalinkNodeOptions(
+  input: LavalinkNodeInput
+): LavalinkNodeOptions {
   if (input.host.trim().length === 0) {
     throw new Error('Lavalink 호스트를 입력해 주세요.')
   }
@@ -44,7 +46,9 @@ export function createLavalinkNodeOptions(input: LavalinkNodeInput): LavalinkNod
   }
 }
 
-export function createLavalinkManager(input: LavalinkManagerInput): LavalinkManager<CustomPlayer> {
+export function createLavalinkManager(
+  input: LavalinkManagerInput
+): LavalinkManager<CustomPlayer> {
   const nodeOptions = createLavalinkNodeOptions(input)
 
   return new LavalinkManager({

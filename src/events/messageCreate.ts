@@ -1,11 +1,21 @@
-import type { ProviderAdapter, ToolDefinitionInput } from '../features/ai/aiPolicy'
+import type {
+  ProviderAdapter,
+  ToolDefinitionInput,
+} from '../features/ai/aiPolicy'
 import { assertCanUseAiManagement } from '../features/ai/aiPolicy'
 import type { AiStage } from '../features/ai/animationMessages'
-import { detectMentionPrompt, type IntroInfo, INTRO_INFO } from '../features/ai/mentionAi'
-import { stripThinkTags, stripToolCallSyntax } from '../features/ai/thinkStripper'
-import { getMemoryStore } from '../features/ai/memoryStore'
 import { getHistory } from '../features/ai/conversationStore'
+import { getMemoryStore } from '../features/ai/memoryStore'
+import {
+  INTRO_INFO,
+  type IntroInfo,
+  detectMentionPrompt,
+} from '../features/ai/mentionAi'
 import { KOREAN_SYSTEM_PROMPT } from '../features/ai/systemPrompt'
+import {
+  stripThinkTags,
+  stripToolCallSyntax,
+} from '../features/ai/thinkStripper'
 
 export type MessageCreateInput = {
   readonly authorBot: boolean
@@ -46,7 +56,12 @@ export type MessageCreateResult = {
   readonly sessionKey?: string
   readonly enrichedPrompt?: string
   readonly aiText?: string
-  readonly toolRecords?: readonly { name: string; args: Record<string, unknown>; result: unknown; success: boolean }[]
+  readonly toolRecords?: readonly {
+    name: string
+    args: Record<string, unknown>
+    result: unknown
+    success: boolean
+  }[]
 }
 
 const FOOTER_HINT = '---\n\n-# 이 메시지에 답장하면 대화를 이어갈 수 있어요.'
@@ -59,7 +74,7 @@ async function runThinkingAnimation(
   sendStage: (stage: AiStage) => void | Promise<void>,
   editStage: (stage: AiStage) => void | Promise<void>,
   triggerTyping?: () => void,
-  totalMs = 2500,
+  totalMs = 2500
 ): Promise<void> {
   const stage1ms = 800
   const stage2ms = 800
@@ -79,14 +94,17 @@ async function runThinkingAnimation(
 }
 
 export async function handleMessageCreate(
-  context: MessageCreateContext,
+  context: MessageCreateContext
 ): Promise<MessageCreateResult> {
   if (context.message.authorBot) {
     return { handled: false, sessionContinued: false }
   }
 
   try {
-    const mentionInfo = detectMentionPrompt(context.ai.botId, context.message.content)
+    const mentionInfo = detectMentionPrompt(
+      context.ai.botId,
+      context.message.content
+    )
     if (mentionInfo === undefined) {
       return { handled: false, sessionContinued: false }
     }
@@ -103,7 +121,8 @@ export async function handleMessageCreate(
 
     if (context.ai.provider === undefined) {
       context.reply({
-        content: 'AI 응답이 준비됐어요: dry-run 모드라 실제 작업은 수행하지 않아요.',
+        content:
+          'AI 응답이 준비됐어요: dry-run 모드라 실제 작업은 수행하지 않아요.',
         type: 'text',
       })
       return { handled: true, sessionContinued: false }
@@ -111,7 +130,12 @@ export async function handleMessageCreate(
 
     const thinkPromise =
       context.sendStage !== undefined && context.editStage !== undefined
-        ? runThinkingAnimation(context.sendStage, context.editStage, context.triggerTyping, 2500)
+        ? runThinkingAnimation(
+            context.sendStage,
+            context.editStage,
+            context.triggerTyping,
+            2500
+          )
         : sleep(2500)
 
     const displayName = context.message.memberDisplayName ?? '사용자'
@@ -120,29 +144,43 @@ export async function handleMessageCreate(
     const permissionInfo = context.message.isOwner
       ? '(권한: 서버 주인)'
       : context.message.hasManageGuild
-        ? '(권한: 서버 관리자)'
-        : '(권한: 일반 유저)'
+      ? '(권한: 서버 관리자)'
+      : '(권한: 일반 유저)'
     const sessionKey = `${context.message.guildId}:${context.message.userId}`
-    const memoryBlock = await getMemoryStore().formatForPrompt(context.message.userId)
-    const personalityBlock = await getMemoryStore().buildPersonalityPrompt(context.message.userId)
-    const contextHeader =
-      `[대화 시작 - 사용자: ${displayName}] ${permissionInfo} (서버: ${guildName}, 채널: #${channelName})\n\n${mentionInfo.prompt}`
+    const memoryBlock = await getMemoryStore().formatForPrompt(
+      context.message.userId
+    )
+    const personalityBlock = await getMemoryStore().buildPersonalityPrompt(
+      context.message.userId
+    )
+    const contextHeader = `[대화 시작 - 사용자: ${displayName}] ${permissionInfo} (서버: ${guildName}, 채널: #${channelName})\n\n${mentionInfo.prompt}`
     const enrichedPrompt = memoryBlock + contextHeader
 
     const existingHistory = getHistory(sessionKey)
-    const aiPromise = context.ai.provider.generate(enrichedPrompt, existingHistory, {
-      tools: context.ai.tools,
-      maxSteps: 20,
-      systemPrompt: personalityBlock.length > 0 ? `${KOREAN_SYSTEM_PROMPT}\n\n${personalityBlock}` : undefined,
-    })
+    const aiPromise = context.ai.provider.generate(
+      enrichedPrompt,
+      existingHistory,
+      {
+        tools: context.ai.tools,
+        maxSteps: 20,
+        systemPrompt:
+          personalityBlock.length > 0
+            ? `${KOREAN_SYSTEM_PROMPT}\n\n${personalityBlock}`
+            : undefined,
+      }
+    )
 
     const [response] = await Promise.all([aiPromise, thinkPromise])
 
     const cleaned = stripToolCallSyntax(stripThinkTags(response.text))
-    const usedTools = response.toolRecords.length > 0
-      ? `\n\n> 사용: ${response.toolRecords.map((r) => r.name).join(', ')}`
-      : ''
-    context.reply({ content: `${cleaned}${usedTools}\n\n${FOOTER_HINT}`, type: 'text' })
+    const usedTools =
+      response.toolRecords.length > 0
+        ? `\n\n> 사용: ${response.toolRecords.map((r) => r.name).join(', ')}`
+        : ''
+    context.reply({
+      content: `${cleaned}${usedTools}\n\n${FOOTER_HINT}`,
+      type: 'text',
+    })
 
     return {
       handled: true,
@@ -153,7 +191,8 @@ export async function handleMessageCreate(
       toolRecords: response.toolRecords,
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'AI 처리 중 문제가 생겼어요.'
+    const message =
+      error instanceof Error ? error.message : 'AI 처리 중 문제가 생겼어요.'
     context.reply({ content: message, type: 'text' })
     return { handled: true, sessionContinued: false }
   }

@@ -1,6 +1,10 @@
-import { Client, GuildMember } from 'discord.js'
-import type { ToolDefinition, ToolExecutionContext, ToolResult } from '../toolTypes'
 import { resolveGuild } from '../helpers/resolveGuild'
+import type {
+  ToolDefinition,
+  ToolExecutionContext,
+  ToolResult,
+} from '../toolTypes'
+import { Client, GuildMember } from 'discord.js'
 
 function formatMemberInfo(member: GuildMember): Record<string, unknown> {
   return {
@@ -21,7 +25,12 @@ function summarizeMember(member: GuildMember): string {
     `닉네임: ${member.displayName}`,
     `태그: ${member.user.tag}`,
     member.guild.ownerId === member.id ? '서버 주인' : '',
-    `역할: ${member.roles.cache.filter((r) => r.id !== r.guild.id).map((r) => r.name).join(', ') || '없음'}`,
+    `역할: ${
+      member.roles.cache
+        .filter((r) => r.id !== r.guild.id)
+        .map((r) => r.name)
+        .join(', ') || '없음'
+    }`,
   ].filter(Boolean)
   return parts.join('\n')
 }
@@ -67,7 +76,7 @@ export function lookupMemberTool(client: Client): ToolDefinition {
     },
     async execute(
       args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const query = args.query as string | undefined
@@ -78,7 +87,10 @@ export function lookupMemberTool(client: Client): ToolDefinition {
           const q = query.trim()
           const matched = members.find((m) => matchMember(m, q))
           if (!matched) {
-            return { success: false, message: `해당 멤버를 찾을 수 없어요: ${q}` }
+            return {
+              success: false,
+              message: `해당 멤버를 찾을 수 없어요: ${q}`,
+            }
           }
           return {
             success: true,

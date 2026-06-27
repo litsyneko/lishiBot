@@ -1,8 +1,19 @@
-import { ChannelType, Client, type GuildBasedChannel, type NonThreadGuildBasedChannel } from 'discord.js'
-import type { ToolDefinition, ToolExecutionContext, ToolResult } from '../toolTypes'
 import { resolveGuild } from '../helpers/resolveGuild'
+import type {
+  ToolDefinition,
+  ToolExecutionContext,
+  ToolResult,
+} from '../toolTypes'
+import {
+  ChannelType,
+  Client,
+  type GuildBasedChannel,
+  type NonThreadGuildBasedChannel,
+} from 'discord.js'
 
-function isNonThreadChannel(c: GuildBasedChannel): c is NonThreadGuildBasedChannel {
+function isNonThreadChannel(
+  c: GuildBasedChannel
+): c is NonThreadGuildBasedChannel {
   return (
     c.type === ChannelType.GuildText ||
     c.type === ChannelType.GuildVoice ||
@@ -33,11 +44,13 @@ export function listCategoryChannelsTool(client: Client): ToolDefinition {
     },
     async execute(
       _args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const guild = await resolveGuild(client, context)
-        const nonThreads = [...guild.channels.cache.values()].filter(isNonThreadChannel)
+        const nonThreads = [...guild.channels.cache.values()].filter(
+          isNonThreadChannel
+        )
 
         const categories = nonThreads
           .filter((c) => c.type === ChannelType.GuildCategory)
@@ -52,17 +65,18 @@ export function listCategoryChannelsTool(client: Client): ToolDefinition {
               .map((c) => ({
                 id: c.id,
                 name: c.name,
-                type: c.type === ChannelType.GuildText ? 'text' : c.type === ChannelType.GuildVoice ? 'voice' : 'other',
+                type:
+                  c.type === ChannelType.GuildText
+                    ? 'text'
+                    : c.type === ChannelType.GuildVoice
+                    ? 'voice'
+                    : 'other',
                 position: c.position,
               })),
           }))
 
         const uncategorized = nonThreads
-          .filter(
-            (c) =>
-              !c.parentId &&
-              c.type !== ChannelType.GuildCategory,
-          )
+          .filter((c) => !c.parentId && c.type !== ChannelType.GuildCategory)
           .sort((a, b) => a.position - b.position)
           .map((c) => ({
             id: c.id,
@@ -71,8 +85,8 @@ export function listCategoryChannelsTool(client: Client): ToolDefinition {
               c.type === ChannelType.GuildText
                 ? 'text'
                 : c.type === ChannelType.GuildVoice
-                  ? 'voice'
-                  : 'other',
+                ? 'voice'
+                : 'other',
             position: c.position,
           }))
 
@@ -83,7 +97,8 @@ export function listCategoryChannelsTool(client: Client): ToolDefinition {
             summaryLines.push('- (빈 카테고리)')
           } else {
             for (const ch of cat.children) {
-              const icon = ch.type === 'voice' ? '🔊' : ch.type === 'text' ? '💬' : '📁'
+              const icon =
+                ch.type === 'voice' ? '🔊' : ch.type === 'text' ? '💬' : '📁'
               summaryLines.push(`- ${icon} ${ch.name}`)
             }
           }
@@ -91,7 +106,8 @@ export function listCategoryChannelsTool(client: Client): ToolDefinition {
         if (uncategorized.length > 0) {
           summaryLines.push('### 분류 없음')
           for (const ch of uncategorized) {
-            const icon = ch.type === 'voice' ? '🔊' : ch.type === 'text' ? '💬' : '📁'
+            const icon =
+              ch.type === 'voice' ? '🔊' : ch.type === 'text' ? '💬' : '📁'
             summaryLines.push(`- ${icon} ${ch.name}`)
           }
         }
@@ -148,7 +164,7 @@ export function reorderCategoryChannelsTool(client: Client): ToolDefinition {
     },
     async execute(
       args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const categoryId = args.categoryId as string | undefined
@@ -173,20 +189,25 @@ export function reorderCategoryChannelsTool(client: Client): ToolDefinition {
           .filter(Boolean)
 
         if (ids.length === 0) {
-          return { success: false, message: '최소 하나 이상의 채널 ID가 필요해요.' }
+          return {
+            success: false,
+            message: '최소 하나 이상의 채널 ID가 필요해요.',
+          }
         }
 
         const childChannelIds = new Set(
           [...guild.channels.cache.values()]
             .filter((c) => c.parentId === categoryId)
-            .map((c) => c.id),
+            .map((c) => c.id)
         )
 
         const invalidIds = ids.filter((id) => !childChannelIds.has(id))
         if (invalidIds.length > 0) {
           return {
             success: false,
-            message: `카테고리에 속하지 않은 채널 ID가 포함되어 있어요: ${invalidIds.join(', ')}`,
+            message: `카테고리에 속하지 않은 채널 ID가 포함되어 있어요: ${invalidIds.join(
+              ', '
+            )}`,
           }
         }
 
@@ -246,7 +267,7 @@ export function createCategoryTool(client: Client): ToolDefinition {
     },
     async execute(
       args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const name = args.name as string | undefined
@@ -306,7 +327,7 @@ export function deleteCategoryTool(client: Client): ToolDefinition {
     },
     async execute(
       args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const categoryId = args.categoryId as string | undefined
@@ -330,7 +351,7 @@ export function deleteCategoryTool(client: Client): ToolDefinition {
           target = guild.channels.cache.find(
             (c) =>
               c.type === ChannelType.GuildCategory &&
-              c.name.toLowerCase() === lower,
+              c.name.toLowerCase() === lower
           )
         }
         if (!target || target.type !== ChannelType.GuildCategory) {
@@ -338,7 +359,7 @@ export function deleteCategoryTool(client: Client): ToolDefinition {
         }
 
         const categories = guild.channels.cache.filter(
-          (c) => c.type === ChannelType.GuildCategory,
+          (c) => c.type === ChannelType.GuildCategory
         )
         if (categories.size <= 1) {
           return {

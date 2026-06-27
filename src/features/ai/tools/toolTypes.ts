@@ -53,7 +53,7 @@ export type ToolPermission = {
   readonly runtimeCheck?: (
     args: Record<string, unknown>,
     guildId: string,
-    userId: string,
+    userId: string
   ) => string | null
 }
 
@@ -69,7 +69,7 @@ export type ToolDefinition = {
   readonly hidden?: boolean
   readonly execute: (
     args: Record<string, unknown>,
-    context: ToolExecutionContext,
+    context: ToolExecutionContext
   ) => Promise<ToolResult>
 }
 

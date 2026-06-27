@@ -1,5 +1,5 @@
-import { EmbedBuilder, Colors } from 'discord.js'
 import type { ProposalInfo } from './toolTypes'
+import { Colors, EmbedBuilder } from 'discord.js'
 
 export const toolNameMap: Record<string, string> = {
   create_channel: '채널 생성',
@@ -59,7 +59,10 @@ export function formatArgsForEmbed(args: Record<string, unknown>): string {
   const entries = Object.entries(args)
   if (entries.length === 0) return '없음'
   const lines = entries.map(([key, value]) => {
-    const formatted = typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value)
+    const formatted =
+      typeof value === 'object' && value !== null
+        ? JSON.stringify(value)
+        : String(value)
     return `${key}: ${formatted}`
   })
   const result = lines.join('\n')
@@ -81,7 +84,11 @@ export function buildProposalEmbed(proposal: ProposalInfo): EmbedBuilder {
     .setDescription(proposal.description)
     .addFields(
       { name: '작업', value: displayName, inline: false },
-      { name: '세부 내용', value: formatArgsForEmbed(proposal.args), inline: false },
+      {
+        name: '세부 내용',
+        value: formatArgsForEmbed(proposal.args),
+        inline: false,
+      }
     )
     .setColor(severityColor[proposal.severity])
     .setFooter({

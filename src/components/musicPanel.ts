@@ -1,21 +1,21 @@
+import type { CustomPlayer } from '../music/customPlayer'
+import { formatDuration } from '../music/musicService'
 import {
   ContainerBuilder,
-  TextDisplayBuilder,
-  SeparatorBuilder,
   SectionBuilder,
+  SeparatorBuilder,
+  TextDisplayBuilder,
   ThumbnailBuilder,
 } from '@discordjs/builders'
 import {
-  SeparatorSpacingSize,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  StringSelectMenuBuilder,
   MessageFlags,
+  SeparatorSpacingSize,
+  StringSelectMenuBuilder,
 } from 'discord.js'
 import type { Track } from 'lavalink-client'
-import type { CustomPlayer } from '../music/customPlayer'
-import { formatDuration } from '../music/musicService'
 
 export type PanelTrackInfo = {
   readonly author: string
@@ -33,14 +33,14 @@ export type PanelQueueInfo = {
 }
 
 export type MusicPanelMessage = {
-  readonly components: unknown[]
+  readonly components: ContainerBuilder[]
   readonly flags: number
 }
 
 const SPOTIFY_GREEN = 0x1db954
 
 function escapeMarkdown(text: string): string {
-  return text.replace(/([\\\[\]*_~`>|])/gu, '\\$1')
+  return text.replace(/([\\[\]*_~`>|])/gu, '\\$1')
 }
 
 function resolveThumbnail(track: PanelTrackInfo): string | undefined {
@@ -65,11 +65,13 @@ function buildProgressBar(positionMs: number, durationMs: number): string {
   return `${elapsed}  ${emojiProgressBar(ratio)}  ${total}`
 }
 
-const EMOJI_PROGRESS_START_SINGLE_WHITE = '<:progress_start_single:1519800527309897808>'
+const EMOJI_PROGRESS_START_SINGLE_WHITE =
+  '<:progress_start_single:1519800527309897808>'
 const EMOJI_PROGRESS_START_WHITE = '<:progress_start_white:1519800529419632680>'
 const EMOJI_PROGRESS_WHITE = '<:progress_bar_white:1519800538621808723>'
 const EMOJI_PROGRESS_END_WHITE = '<:progress_end_white:1519800530749362206>'
-const EMOJI_PROGRESS_END_MIDDLE_WHITE = '<:progress_end_middle_white:1519800535069495306>'
+const EMOJI_PROGRESS_END_MIDDLE_WHITE =
+  '<:progress_end_middle_white:1519800535069495306>'
 const EMOJI_PROGRESS_START_BLACK = '<:progress_start_black:1519800532271628520>'
 const EMOJI_PROGRESS_BLACK = '<:progress_bar_black:1519800536894017536>'
 const EMOJI_PROGRESS_END_BLACK = '<:progress_end_black:1519800533626523870>'
@@ -110,7 +112,7 @@ export function emojiProgressBar(percent: number): string {
           ? p === PROGRESS_BAR_EMOJI_COUNT - 1
             ? EMOJI_PROGRESS_WHITE
             : EMOJI_PROGRESS_END_MIDDLE_WHITE
-          : EMOJI_PROGRESS_WHITE,
+          : EMOJI_PROGRESS_WHITE
       )
     } else {
       parts.push(EMOJI_PROGRESS_BLACK)
@@ -131,19 +133,28 @@ export function emojiProgressBar(percent: number): string {
 const QUEUE_PAGE_SIZE = 5
 const PREFIX = 'ctrl:'
 
-function buildNowplayingSection(container: ContainerBuilder, player: CustomPlayer, trackInfo: Track['info']): void {
-  const headerText = `-# 🎵 <#${player.voiceChannelId}> 에서 ${player.paused ? '일시 정지' : '재생'} 중`
-  const titleLine = trackInfo.uri !== undefined && trackInfo.uri.length > 0
-    ? `### [${escapeMarkdown(trackInfo.title)}](${trackInfo.uri})`
-    : `### ${escapeMarkdown(trackInfo.title)}`
+function buildNowplayingSection(
+  container: ContainerBuilder,
+  player: CustomPlayer,
+  trackInfo: Track['info']
+): void {
+  const headerText = `-# 🎵 <#${player.voiceChannelId}> 에서 ${
+    player.paused ? '일시 정지' : '재생'
+  } 중`
+  const titleLine =
+    trackInfo.uri !== undefined && trackInfo.uri.length > 0
+      ? `### [${escapeMarkdown(trackInfo.title)}](${trackInfo.uri})`
+      : `### ${escapeMarkdown(trackInfo.title)}`
   const artistLine = `**${trackInfo.author ?? '알 수 없음'}**`
-  const progressLine = buildProgressBar(player.position, trackInfo.duration ?? 0)
+  const progressLine = buildProgressBar(
+    player.position,
+    trackInfo.duration ?? 0
+  )
 
   const current = player.queue.current
   const requesterId = (current?.requester as { id?: string } | undefined)?.id
-  const requesterLine = requesterId !== undefined
-    ? `-# 신청자: <@${requesterId}>`
-    : undefined
+  const requesterLine =
+    requesterId !== undefined ? `-# 신청자: <@${requesterId}>` : undefined
 
   const nowplayingText = [
     headerText,
@@ -170,29 +181,42 @@ function buildNowplayingSection(container: ContainerBuilder, player: CustomPlaye
   if (thumbnailUrl !== undefined) {
     const section = new SectionBuilder()
       .addTextDisplayComponents(textDisplay)
-      .setThumbnailAccessory(new ThumbnailBuilder().setURL(thumbnailUrl).setDescription(trackInfo.title))
+      .setThumbnailAccessory(
+        new ThumbnailBuilder()
+          .setURL(thumbnailUrl)
+          .setDescription(trackInfo.title)
+      )
     container.addSectionComponents(section)
   } else {
     container.addTextDisplayComponents(textDisplay)
   }
 }
 
-function buildQueueSection(container: ContainerBuilder, player: CustomPlayer): void {
+function buildQueueSection(
+  container: ContainerBuilder,
+  player: CustomPlayer
+): void {
   const tracks = player.queue.tracks
 
-  container
-    .addSeparatorComponents(
-      new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
-    )
+  container.addSeparatorComponents(
+    new SeparatorBuilder()
+      .setDivider(true)
+      .setSpacing(SeparatorSpacingSize.Small)
+  )
 
   if (tracks.length === 0) {
     container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent('### 📄 대기열\n-# 대기열이 비어 있어요.'),
+      new TextDisplayBuilder().setContent(
+        '### 📄 대기열\n-# 대기열이 비어 있어요.'
+      )
     )
     return
   }
 
-  const totalDuration = tracks.reduce((acc, t) => acc + (t.info.duration ?? 0), 0)
+  const totalDuration = tracks.reduce(
+    (acc, t) => acc + (t.info.duration ?? 0),
+    0
+  )
   const totalPages = Math.max(1, Math.ceil(tracks.length / QUEUE_PAGE_SIZE))
   const page = Math.min(player.controllerPage, totalPages)
 
@@ -204,9 +228,10 @@ function buildQueueSection(container: ContainerBuilder, player: CustomPlayer): v
       const t = track as Track
       const displayIdx = pageStart + idx + 1
       const dur = formatDuration(t.info.duration ?? 0)
-      const title = t.info.uri !== undefined && t.info.uri.length > 0
-        ? `[${escapeMarkdown(t.info.title)}](${t.info.uri})`
-        : escapeMarkdown(t.info.title)
+      const title =
+        t.info.uri !== undefined && t.info.uri.length > 0
+          ? `[${escapeMarkdown(t.info.title)}](${t.info.uri})`
+          : escapeMarkdown(t.info.title)
       return `\`\`#${displayIdx}\`\` ${title} \`${dur}\``
     })
     .join('\n')
@@ -214,7 +239,9 @@ function buildQueueSection(container: ContainerBuilder, player: CustomPlayer): v
   const totalText = formatDuration(totalDuration)
   const queueHeader = `### 📄 대기열 (${page}/${totalPages})\n${queueText}\n-# 총 ${tracks.length}곡 (${totalText})`
 
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(queueHeader))
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(queueHeader)
+  )
 
   const selectMenu = new StringSelectMenuBuilder()
     .setCustomId(`${PREFIX}qsel`)
@@ -223,18 +250,20 @@ function buildQueueSection(container: ContainerBuilder, player: CustomPlayer): v
       pageTracks.map((track, idx) => {
         const t = track as Track
         const displayIdx = pageStart + idx + 1
-        const label = t.info.title.length > 80
-          ? `#${displayIdx} ${t.info.title.slice(0, 77)}...`
-          : `#${displayIdx} ${t.info.title}`
+        const label =
+          t.info.title.length > 80
+            ? `#${displayIdx} ${t.info.title.slice(0, 77)}...`
+            : `#${displayIdx} ${t.info.title}`
         return {
           label,
           value: String(displayIdx),
           description: t.info.author ?? '알 수 없음',
         }
-      }),
+      })
     )
 
-  const selectRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu)
+  const selectRow =
+    new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu)
   container.addActionRowComponents(selectRow)
 
   const queueActionRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -255,18 +284,23 @@ function buildQueueSection(container: ContainerBuilder, player: CustomPlayer): v
     new ButtonBuilder()
       .setCustomId(`${PREFIX}qrm`)
       .setStyle(ButtonStyle.Danger)
-      .setEmoji('🗑️'),
+      .setEmoji('🗑️')
   )
   container.addActionRowComponents(queueActionRow)
 }
 
-function buildPlaybackTab(container: ContainerBuilder, player: CustomPlayer, trackInfo: Track['info']): void {
+function buildPlaybackTab(
+  container: ContainerBuilder,
+  player: CustomPlayer,
+  trackInfo: Track['info']
+): void {
   buildNowplayingSection(container, player, trackInfo)
 
   const queueOpen = player.queueVisible
   const repeatMode = (player.repeatMode ?? 'off') as 'off' | 'track' | 'queue'
 
-  const repeatEmoji = repeatMode === 'track' ? '🔂' : repeatMode === 'queue' ? '🔁' : '🔁'
+  const repeatEmoji =
+    repeatMode === 'track' ? '🔂' : repeatMode === 'queue' ? '🔁' : '🔁'
 
   const controlRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
@@ -283,12 +317,14 @@ function buildPlaybackTab(container: ContainerBuilder, player: CustomPlayer, tra
       .setEmoji(EMOJI_BTN_RIGHT),
     new ButtonBuilder()
       .setCustomId(`${PREFIX}repeat`)
-      .setStyle(repeatMode !== 'off' ? ButtonStyle.Success : ButtonStyle.Secondary)
+      .setStyle(
+        repeatMode !== 'off' ? ButtonStyle.Success : ButtonStyle.Secondary
+      )
       .setEmoji(repeatEmoji),
     new ButtonBuilder()
       .setCustomId(`${PREFIX}shuffle`)
       .setStyle(ButtonStyle.Secondary)
-      .setEmoji('🔀'),
+      .setEmoji('🔀')
   )
 
   const utilRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -307,12 +343,14 @@ function buildPlaybackTab(container: ContainerBuilder, player: CustomPlayer, tra
     new ButtonBuilder()
       .setCustomId(`${PREFIX}refresh`)
       .setStyle(ButtonStyle.Secondary)
-      .setEmoji(EMOJI_REFRESH),
+      .setEmoji(EMOJI_REFRESH)
   )
 
   container
     .addSeparatorComponents(
-      new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
+      new SeparatorBuilder()
+        .setDivider(true)
+        .setSpacing(SeparatorSpacingSize.Small)
     )
     .addActionRowComponents(controlRow)
     .addActionRowComponents(utilRow)
@@ -322,18 +360,24 @@ function buildPlaybackTab(container: ContainerBuilder, player: CustomPlayer, tra
   }
 }
 
-function buildSettingsTab(container: ContainerBuilder, player: CustomPlayer, trackInfo: Track['info']): void {
+function buildSettingsTab(
+  container: ContainerBuilder,
+  player: CustomPlayer,
+  trackInfo: Track['info']
+): void {
   buildNowplayingSection(container, player, trackInfo)
 
   const volume = player.volume
 
   const volumeText = new TextDisplayBuilder().setContent(
-    `### ⚙️ 설정\n${volumeToEmoji(volume)} 볼륨: **${volume}%**`,
+    `### ⚙️ 설정\n${volumeToEmoji(volume)} 볼륨: **${volume}%**`
   )
 
   container
     .addSeparatorComponents(
-      new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
+      new SeparatorBuilder()
+        .setDivider(true)
+        .setSpacing(SeparatorSpacingSize.Small)
     )
     .addTextDisplayComponents(volumeText)
 
@@ -357,7 +401,7 @@ function buildSettingsTab(container: ContainerBuilder, player: CustomPlayer, tra
     new ButtonBuilder()
       .setCustomId(`${PREFIX}volUp10`)
       .setLabel('+10')
-      .setStyle(ButtonStyle.Secondary),
+      .setStyle(ButtonStyle.Secondary)
   )
 
   const volRow2 = new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -368,7 +412,7 @@ function buildSettingsTab(container: ContainerBuilder, player: CustomPlayer, tra
     new ButtonBuilder()
       .setCustomId(`${PREFIX}refresh`)
       .setStyle(ButtonStyle.Secondary)
-      .setEmoji(EMOJI_REFRESH),
+      .setEmoji(EMOJI_REFRESH)
   )
 
   container.addActionRowComponents(volRow1).addActionRowComponents(volRow2)
@@ -398,10 +442,12 @@ export function buildControllerPanel(player: CustomPlayer): MusicPanelMessage {
   footerParts.push(`${volumeToEmoji(player.volume)} ${player.volume}%`)
   container
     .addSeparatorComponents(
-      new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small),
+      new SeparatorBuilder()
+        .setDivider(true)
+        .setSpacing(SeparatorSpacingSize.Small)
     )
     .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(`-# ${footerParts.join(' | ')}`),
+      new TextDisplayBuilder().setContent(`-# ${footerParts.join(' | ')}`)
     )
 
   return {
@@ -419,14 +465,18 @@ export type AddedToQueueInput = {
 export function buildTrackAdded(input: AddedToQueueInput): MusicPanelMessage {
   const { track, queuePosition, isPlaying } = input
 
-  const firstLine = isPlaying ? '🎶 노래를 곧 재생할게요!' : `🎵 대기열에 추가했어요.`
-  const titleLine = track.uri !== undefined && track.uri.length > 0
-    ? `### [${escapeMarkdown(track.title)}](${track.uri})`
-    : `### ${escapeMarkdown(track.title)}`
+  const firstLine = isPlaying
+    ? '🎶 노래를 곧 재생할게요!'
+    : `🎵 대기열에 추가했어요.`
+  const titleLine =
+    track.uri !== undefined && track.uri.length > 0
+      ? `### [${escapeMarkdown(track.title)}](${track.uri})`
+      : `### ${escapeMarkdown(track.title)}`
   const artistLine = `**${track.author}**`
-  const positionLine = !isPlaying && queuePosition !== undefined
-    ? `-# 대기열 ${queuePosition}번째`
-    : undefined
+  const positionLine =
+    !isPlaying && queuePosition !== undefined
+      ? `-# 대기열 ${queuePosition}번째`
+      : undefined
 
   const content = [firstLine, titleLine, artistLine, positionLine]
     .filter((line): line is string => line !== undefined)
@@ -439,7 +489,9 @@ export function buildTrackAdded(input: AddedToQueueInput): MusicPanelMessage {
   if (thumbnailUrl !== undefined) {
     const section = new SectionBuilder()
       .addTextDisplayComponents(textDisplay)
-      .setThumbnailAccessory(new ThumbnailBuilder().setURL(thumbnailUrl).setDescription(track.title))
+      .setThumbnailAccessory(
+        new ThumbnailBuilder().setURL(thumbnailUrl).setDescription(track.title)
+      )
     container.addSectionComponents(section)
   } else {
     container.addTextDisplayComponents(textDisplay)
@@ -457,14 +509,19 @@ export type PlaylistQueuedInput = {
   readonly firstTrack: PanelTrackInfo
 }
 
-export function buildPlaylistQueued(input: PlaylistQueuedInput): MusicPanelMessage {
+export function buildPlaylistQueued(
+  input: PlaylistQueuedInput
+): MusicPanelMessage {
   const { playlistName, trackCount, firstTrack } = input
 
   const header = `### 📝 플레이리스트를 추가했어요`
   const body = `**${playlistName}**\n${trackCount}곡을 대기열에 추가했어요.`
-  const firstLine = firstTrack.uri !== undefined && firstTrack.uri.length > 0
-    ? `-# 첫 곡: [${escapeMarkdown(firstTrack.title)}](${firstTrack.uri}) — ${firstTrack.author}`
-    : `-# 첫 곡: ${escapeMarkdown(firstTrack.title)} — ${firstTrack.author}`
+  const firstLine =
+    firstTrack.uri !== undefined && firstTrack.uri.length > 0
+      ? `-# 첫 곡: [${escapeMarkdown(firstTrack.title)}](${firstTrack.uri}) — ${
+          firstTrack.author
+        }`
+      : `-# 첫 곡: ${escapeMarkdown(firstTrack.title)} — ${firstTrack.author}`
 
   const content = [header, body, firstLine].join('\n')
 
@@ -475,7 +532,11 @@ export function buildPlaylistQueued(input: PlaylistQueuedInput): MusicPanelMessa
   if (thumbnailUrl !== undefined) {
     const section = new SectionBuilder()
       .addTextDisplayComponents(textDisplay)
-      .setThumbnailAccessory(new ThumbnailBuilder().setURL(thumbnailUrl).setDescription(firstTrack.title))
+      .setThumbnailAccessory(
+        new ThumbnailBuilder()
+          .setURL(thumbnailUrl)
+          .setDescription(firstTrack.title)
+      )
     container.addSectionComponents(section)
   } else {
     container.addTextDisplayComponents(textDisplay)
@@ -497,9 +558,10 @@ export function buildStoppedPanel(input: StoppedPanelInput): MusicPanelMessage {
   const textParts: string[] = [header]
 
   if (input.track !== undefined) {
-    const titleLine = input.track.uri !== undefined && input.track.uri.length > 0
-      ? `### [${escapeMarkdown(input.track.title)}](${input.track.uri})`
-      : `### ${escapeMarkdown(input.track.title)}`
+    const titleLine =
+      input.track.uri !== undefined && input.track.uri.length > 0
+        ? `### [${escapeMarkdown(input.track.title)}](${input.track.uri})`
+        : `### ${escapeMarkdown(input.track.title)}`
     const artistLine = `**${input.track.author}**`
     textParts.push(titleLine, artistLine)
   }
@@ -509,11 +571,16 @@ export function buildStoppedPanel(input: StoppedPanelInput): MusicPanelMessage {
   const textDisplay = new TextDisplayBuilder().setContent(content)
   const container = new ContainerBuilder().setAccentColor(0x95a5a6)
 
-  const thumbnailUrl = input.track !== undefined ? resolveThumbnail(input.track) : undefined
+  const thumbnailUrl =
+    input.track !== undefined ? resolveThumbnail(input.track) : undefined
   if (input.track !== undefined && thumbnailUrl !== undefined) {
     const section = new SectionBuilder()
       .addTextDisplayComponents(textDisplay)
-      .setThumbnailAccessory(new ThumbnailBuilder().setURL(thumbnailUrl).setDescription(input.track.title))
+      .setThumbnailAccessory(
+        new ThumbnailBuilder()
+          .setURL(thumbnailUrl)
+          .setDescription(input.track.title)
+      )
     container.addSectionComponents(section)
   } else {
     container.addTextDisplayComponents(textDisplay)

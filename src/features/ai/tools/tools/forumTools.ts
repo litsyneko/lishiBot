@@ -1,6 +1,16 @@
-import { ChannelType, Client, PermissionFlagsBits, type ForumChannel, type ThreadChannel } from 'discord.js'
-import type { ToolDefinition, ToolExecutionContext, ToolResult } from '../toolTypes'
 import { resolveGuild } from '../helpers/resolveGuild'
+import type {
+  ToolDefinition,
+  ToolExecutionContext,
+  ToolResult,
+} from '../toolTypes'
+import {
+  ChannelType,
+  Client,
+  type ForumChannel,
+  PermissionFlagsBits,
+  type ThreadChannel,
+} from 'discord.js'
 
 function isForumChannel(channel: unknown): channel is ForumChannel {
   return (
@@ -18,7 +28,8 @@ function isThreadChannel(channel: unknown): channel is ThreadChannel {
     'type' in channel &&
     ((channel as { type: ChannelType }).type === ChannelType.PublicThread ||
       (channel as { type: ChannelType }).type === ChannelType.PrivateThread ||
-      (channel as { type: ChannelType }).type === ChannelType.AnnouncementThread)
+      (channel as { type: ChannelType }).type ===
+        ChannelType.AnnouncementThread)
   )
 }
 
@@ -60,14 +71,17 @@ export function listForumPostsTool(client: Client): ToolDefinition {
     },
     async execute(
       args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const forumId = args.forumId as string | undefined
         const forumName = args.forumName as string | undefined
         const includeArchived = Boolean(args.includeArchived ?? true)
         const limitRaw = Number(args.limit ?? 25)
-        const limit = Number.isInteger(limitRaw) && limitRaw >= 1 && limitRaw <= 50 ? limitRaw : 25
+        const limit =
+          Number.isInteger(limitRaw) && limitRaw >= 1 && limitRaw <= 50
+            ? limitRaw
+            : 25
 
         const guild = await resolveGuild(client, context)
 
@@ -100,43 +114,50 @@ export function listForumPostsTool(client: Client): ToolDefinition {
 
         const threads: ThreadChannel[] = []
 
-        const active = await forum.threads.fetchActive().catch(() => ({ threads: new Map<string, ThreadChannel>() }))
+        const active = await forum.threads
+          .fetchActive()
+          .catch(() => ({ threads: new Map<string, ThreadChannel>() }))
         for (const t of active.threads.values()) {
           threads.push(t)
         }
 
         if (includeArchived) {
-          const archived = await forum.threads.fetchArchived({ fetchAll: true }).catch(() => ({ threads: new Map<string, ThreadChannel>() }))
+          const archived = await forum.threads
+            .fetchArchived({ fetchAll: true })
+            .catch(() => ({ threads: new Map<string, ThreadChannel>() }))
           for (const t of archived.threads.values()) {
             threads.push(t)
           }
         }
 
-        const posts = threads
-          .slice(0, limit)
-          .map((t) => ({
-            id: t.id,
-            name: t.name,
-            authorId: t.ownerId,
-            archived: t.archived,
-            locked: t.locked,
-            createdAt: t.createdAt?.toISOString() ?? null,
-            messageCount: t.messageCount,
-            appliedTags: t.appliedTags,
-            type: t.type === ChannelType.PrivateThread ? 'private' : 'public',
-          }))
+        const posts = threads.slice(0, limit).map((t) => ({
+          id: t.id,
+          name: t.name,
+          authorId: t.ownerId,
+          archived: t.archived,
+          locked: t.locked,
+          createdAt: t.createdAt?.toISOString() ?? null,
+          messageCount: t.messageCount,
+          appliedTags: t.appliedTags,
+          type: t.type === ChannelType.PrivateThread ? 'private' : 'public',
+        }))
 
         if (posts.length === 0) {
           return {
             success: true,
             message: '포럼에 게시글이 없어요.',
-            data: { count: 0, posts: [], forum: { id: forum.id, name: forum.name } },
+            data: {
+              count: 0,
+              posts: [],
+              forum: { id: forum.id, name: forum.name },
+            },
             summary: '게시글 없음',
           }
         }
 
         const summaryLines = posts.map((p) => {
-          const tags = p.appliedTags.length > 0 ? ` [${p.appliedTags.join(', ')}]` : ''
+          const tags =
+            p.appliedTags.length > 0 ? ` [${p.appliedTags.join(', ')}]` : ''
           const status = p.archived ? ' (보관됨)' : p.locked ? ' (잠김)' : ''
           return `- ${p.name}${tags}${status} (${p.messageCount}개 메시지)`
         })
@@ -196,7 +217,7 @@ export function readForumPostTool(client: Client): ToolDefinition {
     },
     async execute(
       args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const postId = args.postId as string | undefined
@@ -207,7 +228,10 @@ export function readForumPostTool(client: Client): ToolDefinition {
           return { success: false, message: 'postId가 필요해요.' }
         }
 
-        const limit = Number.isInteger(limitRaw) && limitRaw >= 1 && limitRaw <= 100 ? limitRaw : 50
+        const limit =
+          Number.isInteger(limitRaw) && limitRaw >= 1 && limitRaw <= 100
+            ? limitRaw
+            : 50
 
         const guild = await resolveGuild(client, context)
 
@@ -222,16 +246,24 @@ export function readForumPostTool(client: Client): ToolDefinition {
         if (me) {
           const perms = thread.permissionsFor(me)
           if (perms && !perms.has(PermissionFlagsBits.ViewChannel)) {
-            return { success: false, message: '봇이 해당 포스트를 볼 수 없어요.' }
+            return {
+              success: false,
+              message: '봇이 해당 포스트를 볼 수 없어요.',
+            }
           }
           if (perms && !perms.has(PermissionFlagsBits.ReadMessageHistory)) {
-            return { success: false, message: '봇이 메시지 기록을 읽을 권한이 없어요.' }
+            return {
+              success: false,
+              message: '봇이 메시지 기록을 읽을 권한이 없어요.',
+            }
           }
         }
 
         const fetched = await thread.messages.fetch({ limit })
 
-        let starterMessage: { authorName: string; content: string; createdAt: string } | undefined
+        let starterMessage:
+          | { authorName: string; content: string; createdAt: string }
+          | undefined
         if (thread.id === thread.lastMessageId && fetched.size === 0) {
           // empty thread
         }
@@ -243,18 +275,33 @@ export function readForumPostTool(client: Client): ToolDefinition {
             const msg = {
               id: m.id,
               authorId: m.author.id,
-              authorName: m.member?.displayName ?? m.author.displayName ?? m.author.username,
+              authorName:
+                m.member?.displayName ??
+                m.author.displayName ??
+                m.author.username,
               isBot: m.author.bot,
-              content: m.content.length > 500 ? `${m.content.slice(0, 500)}...` : m.content,
+              content:
+                m.content.length > 500
+                  ? `${m.content.slice(0, 500)}...`
+                  : m.content,
               createdAt: m.createdAt.toISOString(),
-              attachments: m.attachments.size > 0
-                ? m.attachments.map((a) => ({ filename: a.name, url: a.url, contentType: a.contentType }))
-                : undefined,
+              attachments:
+                m.attachments.size > 0
+                  ? m.attachments.map((a) => ({
+                      filename: a.name,
+                      url: a.url,
+                      contentType: a.contentType,
+                    }))
+                  : undefined,
               embedCount: m.embeds.length,
               isStarter: false,
             }
             if (m.id === thread.id) {
-              starterMessage = { authorName: msg.authorName, content: msg.content, createdAt: msg.createdAt }
+              starterMessage = {
+                authorName: msg.authorName,
+                content: msg.content,
+                createdAt: msg.createdAt,
+              }
               msg.isStarter = true
             }
             return msg
@@ -264,13 +311,20 @@ export function readForumPostTool(client: Client): ToolDefinition {
           return {
             success: true,
             message: '읽을 메시지가 없어요.',
-            data: { count: 0, messages: [], post: { id: thread.id, name: thread.name } },
+            data: {
+              count: 0,
+              messages: [],
+              post: { id: thread.id, name: thread.name },
+            },
             summary: '메시지 없음',
           }
         }
 
         const summaryLines = messages.map((m) => {
-          const time = new Date(m.createdAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false })
+          const time = new Date(m.createdAt).toLocaleString('ko-KR', {
+            timeZone: 'Asia/Seoul',
+            hour12: false,
+          })
           const botTag = m.isBot ? ' [봇]' : ''
           const starterTag = m.isStarter ? ' [원문]' : ''
           return `[${time}] ${m.authorName}${botTag}${starterTag}: ${m.content}`

@@ -1,16 +1,20 @@
+import type {
+  ToolDefinition,
+  ToolExecutionContext,
+  ToolResult,
+} from '../toolTypes'
 import {
-  Client,
-  ContainerBuilder,
-  TextDisplayBuilder,
-  SeparatorBuilder,
-  SeparatorSpacingSize,
-  MediaGalleryBuilder,
-  MessageFlags,
+  ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  ActionRowBuilder,
+  Client,
+  ContainerBuilder,
+  MediaGalleryBuilder,
+  MessageFlags,
+  SeparatorBuilder,
+  SeparatorSpacingSize,
+  TextDisplayBuilder,
 } from 'discord.js'
-import type { ToolDefinition, ToolExecutionContext, ToolResult } from '../toolTypes'
 
 type ChannelLike = {
   id: string
@@ -63,15 +67,19 @@ export function sendMessageTool(client: Client): ToolDefinition {
     },
     async execute(
       args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
-        const channelId = (args.channel_id as string | undefined)?.trim() || context.channelId
+        const channelId =
+          (args.channel_id as string | undefined)?.trim() || context.channelId
         const color = (args.color as string | undefined)?.trim()
         const rawBlocks = Array.isArray(args.blocks) ? args.blocks : []
 
         if (rawBlocks.length === 0) {
-          return { success: false, message: '최소 하나 이상의 블록을 배치해 주세요.' }
+          return {
+            success: false,
+            message: '최소 하나 이상의 블록을 배치해 주세요.',
+          }
         }
 
         const blocks: Block[] = []
@@ -89,18 +97,28 @@ export function sendMessageTool(client: Client): ToolDefinition {
           } else if (type === 'images') {
             const items = Array.isArray(r.items) ? r.items : []
             const parsed = items
-              .filter((i): i is Record<string, unknown> => typeof i === 'object' && i !== null)
+              .filter(
+                (i): i is Record<string, unknown> =>
+                  typeof i === 'object' && i !== null
+              )
               .map((i) => ({
                 url: String(i.url ?? '').trim(),
-                description: typeof i.description === 'string' ? i.description.trim() : undefined,
+                description:
+                  typeof i.description === 'string'
+                    ? i.description.trim()
+                    : undefined,
               }))
               .filter((i) => i.url)
               .slice(0, 10)
-            if (parsed.length > 0) blocks.push({ type: 'images', items: parsed })
+            if (parsed.length > 0)
+              blocks.push({ type: 'images', items: parsed })
           } else if (type === 'buttons') {
             const items = Array.isArray(r.items) ? r.items : []
             const parsed = items
-              .filter((i): i is Record<string, unknown> => typeof i === 'object' && i !== null)
+              .filter(
+                (i): i is Record<string, unknown> =>
+                  typeof i === 'object' && i !== null
+              )
               .map((i) => ({
                 label: String(i.label ?? '').trim(),
                 url: String(i.url ?? '').trim(),
@@ -108,7 +126,8 @@ export function sendMessageTool(client: Client): ToolDefinition {
               }))
               .filter((i) => i.label && i.url)
               .slice(0, 2)
-            if (parsed.length > 0) blocks.push({ type: 'buttons', items: parsed })
+            if (parsed.length > 0)
+              blocks.push({ type: 'buttons', items: parsed })
           }
         }
 
@@ -116,13 +135,18 @@ export function sendMessageTool(client: Client): ToolDefinition {
           return { success: false, message: '유효한 블록이 없어요.' }
         }
 
-        const channel = client.channels.cache.get(channelId) as ChannelLike | undefined
+        const channel = client.channels.cache.get(channelId) as
+          | ChannelLike
+          | undefined
         if (channel === undefined) {
           return { success: false, message: '채널을 찾을 수 없어요.' }
         }
 
         if (!channel.isTextBased()) {
-          return { success: false, message: '텍스트 채널에만 전송할 수 있어요.' }
+          return {
+            success: false,
+            message: '텍스트 채널에만 전송할 수 있어요.',
+          }
         }
 
         const container = new ContainerBuilder()
@@ -138,11 +162,11 @@ export function sendMessageTool(client: Client): ToolDefinition {
         for (const block of blocks) {
           if (block.type === 'title') {
             container.addTextDisplayComponents(
-              new TextDisplayBuilder().setContent(`### ${block.content}`),
+              new TextDisplayBuilder().setContent(`### ${block.content}`)
             )
           } else if (block.type === 'text') {
             container.addTextDisplayComponents(
-              new TextDisplayBuilder().setContent(block.content),
+              new TextDisplayBuilder().setContent(block.content)
             )
           } else if (block.type === 'separator') {
             container.addSeparatorComponents(
@@ -151,13 +175,16 @@ export function sendMessageTool(client: Client): ToolDefinition {
                 .setSpacing(
                   block.spacing === 'large'
                     ? SeparatorSpacingSize.Large
-                    : SeparatorSpacingSize.Small,
-                ),
+                    : SeparatorSpacingSize.Small
+                )
             )
           } else if (block.type === 'images') {
             const gallery = new MediaGalleryBuilder()
             for (const img of block.items) {
-              gallery.addItems({ media: { url: img.url }, description: img.description })
+              gallery.addItems({
+                media: { url: img.url },
+                description: img.description,
+              })
             }
             container.addMediaGalleryComponents(gallery)
           } else if (block.type === 'buttons') {
@@ -167,14 +194,20 @@ export function sendMessageTool(client: Client): ToolDefinition {
                 .setURL(b.url)
 
               if (b.style === 'success') builder.setStyle(ButtonStyle.Success)
-              else if (b.style === 'danger') builder.setStyle(ButtonStyle.Danger)
-              else if (b.style === 'primary') builder.setStyle(ButtonStyle.Primary)
-              else if (b.style === 'secondary') builder.setStyle(ButtonStyle.Secondary)
+              else if (b.style === 'danger')
+                builder.setStyle(ButtonStyle.Danger)
+              else if (b.style === 'primary')
+                builder.setStyle(ButtonStyle.Primary)
+              else if (b.style === 'secondary')
+                builder.setStyle(ButtonStyle.Secondary)
               else builder.setStyle(ButtonStyle.Link)
 
               return builder
             })
-            const actionRow = new ActionRowBuilder<ButtonBuilder>().addComponents(...buttonBuilders)
+            const actionRow =
+              new ActionRowBuilder<ButtonBuilder>().addComponents(
+                ...buttonBuilders
+              )
             container.addActionRowComponents(actionRow)
           }
         }
@@ -184,7 +217,8 @@ export function sendMessageTool(client: Client): ToolDefinition {
           flags: MessageFlags.IsComponentsV2,
         })
 
-        const targetLabel = channelId === context.channelId ? '현재 채널' : `<#${channelId}>`
+        const targetLabel =
+          channelId === context.channelId ? '현재 채널' : `<#${channelId}>`
         const blockCount = blocks.length
         const summary = `${targetLabel}에 메시지를 전송했어요. (${blockCount}개 블록)`
         return {

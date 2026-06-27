@@ -58,10 +58,15 @@ export function formatDuration(durationMs: number): string {
 }
 
 export function formatTrackLine(track: IndexedTrack): string {
-  return `\`${track.index}.\` **${track.title}** — ${track.author} \`${formatDuration(track.durationMs)}\``
+  return `\`${track.index}.\` **${track.title}** — ${
+    track.author
+  } \`${formatDuration(track.durationMs)}\``
 }
 
-export function paginateQueue(tracks: readonly TrackInfo[], options: PaginateOptions): QueuePage {
+export function paginateQueue(
+  tracks: readonly TrackInfo[],
+  options: PaginateOptions
+): QueuePage {
   if (tracks.length === 0) {
     return { currentPage: 0, tracks: [], totalPages: 0 }
   }
@@ -83,14 +88,16 @@ export function formatQueuePage(page: QueuePage): string {
     return '대기열이 비어 있어요.'
   }
 
-  const header = `**대기열 (${page.currentPage + 1}/${page.totalPages} 페이지)**`
+  const header = `**대기열 (${page.currentPage + 1}/${
+    page.totalPages
+  } 페이지)**`
   const lines = page.tracks.map((track, i) =>
     formatTrackLine({
       author: track.author,
       durationMs: track.durationMs,
       index: page.currentPage * 10 + i + 1,
       title: track.title,
-    }),
+    })
   )
 
   return [header, ...lines].join('\n')

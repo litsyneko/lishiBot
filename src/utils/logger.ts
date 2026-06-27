@@ -1,4 +1,4 @@
-import { colorize, type ColorName } from './colors'
+import { type ColorName, colorize } from './colors'
 import { createLogger, format, transports } from 'winston'
 
 export type LogLevel = 'DEBUG' | 'ERROR' | 'INFO' | 'WARN'
@@ -47,10 +47,7 @@ const winstonLogger = createLogger({
     info: 2,
     debug: 3,
   },
-  format: format.combine(
-    format.timestamp(),
-    format.errors({ stack: true }),
-  ),
+  format: format.combine(format.timestamp(), format.errors({ stack: true })),
   transports: [
     new transports.Console({
       format: format.printf((info) => {
@@ -84,6 +81,7 @@ function emit(level: LogLevel, category: string, message: string): void {
 
   const elapsedMs = Date.now() - clockStart
 
+  // winston LogEntry 타입과 커스텀 payload 타입 불일치
   winstonLogger.log({
     level: WINSTON_LEVEL_MAP[level],
     message,

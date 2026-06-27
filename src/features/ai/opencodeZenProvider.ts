@@ -1,9 +1,9 @@
-import { generateText, stepCountIs } from 'ai'
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
-import { z } from 'zod'
-import type { ChatMessage, ProviderAdapter, ToolDefinitionInput } from './aiPolicy'
-import { KOREAN_SYSTEM_PROMPT } from './systemPrompt'
 import { logger } from '../../utils/logger'
+import type { ChatMessage, ProviderAdapter } from './aiPolicy'
+import { KOREAN_SYSTEM_PROMPT } from './systemPrompt'
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
+import { type ToolSet, generateText, stepCountIs } from 'ai'
+import { z } from 'zod'
 
 export type OpencodeZenConfig = {
   readonly apiKey: string
@@ -25,7 +25,13 @@ function toModelMessages(prompt: string, history?: readonly ChatMessage[]) {
   return messages
 }
 
-function buildZodSchema(properties: Record<string, { type: string; description: string; enum?: readonly string[] }>, required: readonly string[]) {
+function buildZodSchema(
+  properties: Record<
+    string,
+    { type: string; description: string; enum?: readonly string[] }
+  >,
+  required: readonly string[]
+) {
   const shape: Record<string, z.ZodTypeAny> = {}
 
   for (const [key, prop] of Object.entries(properties)) {
@@ -44,7 +50,9 @@ function buildZodSchema(properties: Record<string, { type: string; description: 
     schema = schema.describe(prop.description)
 
     if (prop.enum !== undefined) {
-      schema = z.enum(prop.enum as [string, ...string[]]).describe(prop.description)
+      schema = z
+        .enum(prop.enum as [string, ...string[]])
+        .describe(prop.description)
     }
 
     if (!required.includes(key)) {
@@ -57,7 +65,9 @@ function buildZodSchema(properties: Record<string, { type: string; description: 
   return z.object(shape)
 }
 
-export function createOpencodeZenProvider(config: OpencodeZenConfig): ProviderAdapter {
+export function createOpencodeZenProvider(
+  config: OpencodeZenConfig
+): ProviderAdapter {
   if (config.apiKey.trim().length === 0) {
     throw new Error('OpenCode Zen API 키를 입력해 주세요.')
   }
@@ -80,21 +90,26 @@ export function createOpencodeZenProvider(config: OpencodeZenConfig): ProviderAd
         for (const t of options.tools) {
           toolsParam[t.name] = {
             description: t.description,
-            inputSchema: buildZodSchema(t.parameters.properties, t.parameters.required),
+            inputSchema: buildZodSchema(
+              t.parameters.properties,
+              t.parameters.required
+            ),
             execute: t.execute,
           }
         }
       }
 
       const toolNames = options?.tools?.map((t) => t.name).join(', ') ?? 'none'
-      logger.info('AI', `OpenCode Zen 요청: model=${config.model} tools=[${toolNames}] maxSteps=${maxSteps}`)
+      logger.info(
+        'AI',
+        `OpenCode Zen 요청: model=${config.model} tools=[${toolNames}] maxSteps=${maxSteps}`
+      )
 
       const result = await generateText({
         model,
         system: systemPrompt,
         messages: toModelMessages(prompt, history),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        tools: toolsParam as any,
+        tools: toolsParam as ToolSet | undefined,
         stopWhen: stepCountIs(maxSteps),
       })
 
@@ -113,10 +128,12 @@ export function createOpencodeZenProvider(config: OpencodeZenConfig): ProviderAd
         })
       })
 
-      logger.info('AI', `OpenCode Zen 응답 (${text.length}자, ${toolRecords.length}개 툴 실행)`)
+      logger.info(
+        'AI',
+        `OpenCode Zen 응답 (${text.length}자, ${toolRecords.length}개 툴 실행)`
+      )
 
       return { text, toolRecords }
     },
   }
 }
-

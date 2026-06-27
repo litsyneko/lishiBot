@@ -1,6 +1,6 @@
+import { config } from '../../config'
 import { createClient } from '@supabase/supabase-js'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { config } from '../../config'
 
 let client: SupabaseClient | null = null
 
@@ -13,4 +13,3 @@ export function getSupabase(): SupabaseClient | null {
   client = createClient(sc.url, sc.secretKey)
   return client
 }
-

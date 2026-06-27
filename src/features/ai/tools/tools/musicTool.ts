@@ -1,24 +1,36 @@
-import type { Client, GuildMember } from 'discord.js'
-import type { Track, UnresolvedTrack } from 'lavalink-client'
-import { PermissionFlagsBits } from 'discord.js'
-import type { ToolDefinition, ToolExecutionContext, ToolResult } from '../toolTypes'
+import { createMusicSettingsService } from '../../../../features/music/musicSettings'
 import { getMusicManager } from '../../../../modules/MusicExtension'
+import type { CustomPlayer } from '../../../../music/customPlayer'
 import { buildSearchQuery } from '../../../../music/musicService'
 import { getVolume, setVolume } from '../../../../music/volumeStore'
 import { logger } from '../../../../utils/logger'
-import type { CustomPlayer } from '../../../../music/customPlayer'
-import { createMusicSettingsService } from '../../../../features/music/musicSettings'
+import type {
+  ToolDefinition,
+  ToolExecutionContext,
+  ToolResult,
+} from '../toolTypes'
+import type { Client, GuildMember } from 'discord.js'
+import { PermissionFlagsBits } from 'discord.js'
+import type { SearchPlatform, Track, UnresolvedTrack } from 'lavalink-client'
 
 function formatDuration(ms: number): string {
   const seconds = Math.floor(ms / 1000)
   const h = Math.floor(seconds / 3600)
   const m = Math.floor((seconds % 3600) / 60)
   const s = seconds % 60
-  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  if (h > 0)
+    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-async function resolveMember(client: Client, guildId: string, userId: string): Promise<{ guild: GuildMember['guild']; member: GuildMember } | { success: false; message: string }> {
+async function resolveMember(
+  client: Client,
+  guildId: string,
+  userId: string
+): Promise<
+  | { guild: GuildMember['guild']; member: GuildMember }
+  | { success: false; message: string }
+> {
   const guild = client.guilds.cache.get(guildId)
   if (guild === undefined) {
     return { success: false, message: '서버 정보를 찾을 수 없어요.' }
@@ -32,7 +44,9 @@ async function resolveMember(client: Client, guildId: string, userId: string): P
   return { guild, member }
 }
 
-function checkVoiceChannel(member: GuildMember): { voiceChannelId: string } | { success: false; message: string } {
+function checkVoiceChannel(
+  member: GuildMember
+): { voiceChannelId: string } | { success: false; message: string } {
   const voiceChannel = member.voice.channel
   if (voiceChannel === null || voiceChannel === undefined) {
     return { success: false, message: '먼저 음성 채널에 입장해 주세요.' }
@@ -64,7 +78,7 @@ function checkBotVoicePermissions(member: GuildMember): ToolResult | undefined {
 async function getOrCreatePlayerWithSettings(
   guildId: string,
   voiceChannelId: string,
-  textChannelId: string,
+  textChannelId: string
 ): Promise<CustomPlayer> {
   const manager = getMusicManager()
   const musicSettings = createMusicSettingsService()
@@ -111,8 +125,7 @@ export function playMusicTool(client: Client): ToolDefinition {
         properties: {
           query: {
             type: 'string',
-            description:
-              '검색어 (노래 제목, 가수) 또는 유튜브/유튜브 뮤직 URL',
+            description: '검색어 (노래 제목, 가수) 또는 유튜브/유튜브 뮤직 URL',
           },
         },
         required: ['query'],
@@ -125,15 +138,19 @@ export function playMusicTool(client: Client): ToolDefinition {
     },
     async execute(
       args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
-        const query = (args.query as string ?? '').trim()
+        const query = ((args.query as string) ?? '').trim()
         if (query.length === 0) {
           return { success: false, message: '검색어를 입력해 주세요.' }
         }
 
-        const resolved = await resolveMember(client, context.guildId, context.userId)
+        const resolved = await resolveMember(
+          client,
+          context.guildId,
+          context.userId
+        )
         if ('success' in resolved) return resolved
 
         const voice = checkVoiceChannel(resolved.member)
@@ -145,7 +162,7 @@ export function playMusicTool(client: Client): ToolDefinition {
         const player = await getOrCreatePlayerWithSettings(
           context.guildId,
           voice.voiceChannelId,
-          context.channelId,
+          context.channelId
         )
 
         if (!player.connected) {
@@ -154,15 +171,25 @@ export function playMusicTool(client: Client): ToolDefinition {
 
         const savedVolume = getVolume(context.guildId)
         if (player.volume !== savedVolume) {
-          await player.setVolume(savedVolume).catch(() => {})
+          await player.setVolume(savedVolume).catch((err: unknown) => {
+            logger.debug(
+              'AI',
+              `setVolume failed: ${
+                err instanceof Error ? err.message : String(err)
+              }`
+            )
+          })
         }
 
         const searchQuery = buildSearchQuery(query)
         const result = await player.search(
           searchQuery.source !== undefined
-            ? { query: searchQuery.query, source: searchQuery.source as never }
+            ? {
+                query: searchQuery.query,
+                source: searchQuery.source as SearchPlatform,
+              }
             : { query: searchQuery.query },
-          context.userId,
+          context.userId
         )
 
         if (result.loadType === 'error') {
@@ -174,8 +201,9 @@ export function playMusicTool(client: Client): ToolDefinition {
         }
 
         const tracks = result.tracks.filter(
-          (t: Track | UnresolvedTrack | null | undefined): t is Track | UnresolvedTrack =>
-            t !== null && t !== undefined,
+          (
+            t: Track | UnresolvedTrack | null | undefined
+          ): t is Track | UnresolvedTrack => t !== null && t !== undefined
         )
 
         if (result.loadType === 'playlist') {
@@ -210,9 +238,15 @@ export function playMusicTool(client: Client): ToolDefinition {
           track.info.duration !== undefined && track.info.duration > 0
             ? ` (${formatDuration(track.info.duration)})`
             : ''
-        const summary = `**${track.info.title}**${durationLabel} - ${track.info.author ?? '알 수 없음'}`
+        const summary = `**${track.info.title}**${durationLabel} - ${
+          track.info.author ?? '알 수 없음'
+        }`
         logger.info('AITool', `play_music: ${summary}`)
-        return { success: true, message: `${summary}을(를) 재생할게요!`, summary }
+        return {
+          success: true,
+          message: `${summary}을(를) 재생할게요!`,
+          summary,
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         logger.error('AITool', `play_music 오류: ${message}`)
@@ -243,7 +277,7 @@ export function stopMusicTool(_client: Client): ToolDefinition {
     },
     async execute(
       _args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const manager = getMusicManager()
@@ -253,11 +287,18 @@ export function stopMusicTool(_client: Client): ToolDefinition {
         }
 
         await player.destroy()
-        return { success: true, message: '음악 재생을 정지하고 대기열을 비웠어요.', summary: '음악 재생을 정지하고 대기열을 비웠어요.' }
+        return {
+          success: true,
+          message: '음악 재생을 정지하고 대기열을 비웠어요.',
+          summary: '음악 재생을 정지하고 대기열을 비웠어요.',
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         logger.error('AITool', `stop_music 오류: ${message}`)
-        return { success: false, message: `음악 정지 중 오류가 발생했어요: ${message}` }
+        return {
+          success: false,
+          message: `음악 정지 중 오류가 발생했어요: ${message}`,
+        }
       }
     },
   }
@@ -281,7 +322,7 @@ export function pauseMusicTool(_client: Client): ToolDefinition {
     },
     async execute(
       _args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const manager = getMusicManager()
@@ -295,11 +336,18 @@ export function pauseMusicTool(_client: Client): ToolDefinition {
         }
 
         await player.pause()
-        return { success: true, message: '일시정지했어요.', summary: '일시정지했어요.' }
+        return {
+          success: true,
+          message: '일시정지했어요.',
+          summary: '일시정지했어요.',
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         logger.error('AITool', `pause_music 오류: ${message}`)
-        return { success: false, message: `일시정지 중 오류가 발생했어요: ${message}` }
+        return {
+          success: false,
+          message: `일시정지 중 오류가 발생했어요: ${message}`,
+        }
       }
     },
   }
@@ -323,7 +371,7 @@ export function resumeMusicTool(_client: Client): ToolDefinition {
     },
     async execute(
       _args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const manager = getMusicManager()
@@ -337,11 +385,18 @@ export function resumeMusicTool(_client: Client): ToolDefinition {
         }
 
         await player.resume()
-        return { success: true, message: '다시 재생했어요.', summary: '다시 재생했어요.' }
+        return {
+          success: true,
+          message: '다시 재생했어요.',
+          summary: '다시 재생했어요.',
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         logger.error('AITool', `resume_music 오류: ${message}`)
-        return { success: false, message: `다시 재생 중 오류가 발생했어요: ${message}` }
+        return {
+          success: false,
+          message: `다시 재생 중 오류가 발생했어요: ${message}`,
+        }
       }
     },
   }
@@ -370,12 +425,15 @@ export function setVolumeTool(_client: Client): ToolDefinition {
     },
     async execute(
       args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const volume = Number(args.volume)
         if (!Number.isInteger(volume) || volume < 0 || volume > 100) {
-          return { success: false, message: '볼륨은 0~100 사이의 정수로 입력해 주세요.' }
+          return {
+            success: false,
+            message: '볼륨은 0~100 사이의 정수로 입력해 주세요.',
+          }
         }
 
         const manager = getMusicManager()
@@ -386,13 +444,29 @@ export function setVolumeTool(_client: Client): ToolDefinition {
 
         await player.setVolume(volume)
         setVolume(context.guildId, volume)
-        createMusicSettingsService().patchSettings(context.guildId, { volume }).catch(() => {})
+        createMusicSettingsService()
+          .patchSettings(context.guildId, { volume })
+          .catch((err: unknown) => {
+            logger.debug(
+              'AI',
+              `patchSettings(volume) failed: ${
+                err instanceof Error ? err.message : String(err)
+              }`
+            )
+          })
 
-        return { success: true, message: `볼륨을 ${volume}으로 설정했어요.`, summary: `볼륨을 ${volume}으로 설정했어요.` }
+        return {
+          success: true,
+          message: `볼륨을 ${volume}으로 설정했어요.`,
+          summary: `볼륨을 ${volume}으로 설정했어요.`,
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         logger.error('AITool', `set_volume 오류: ${message}`)
-        return { success: false, message: `볼륨 설정 중 오류가 발생했어요: ${message}` }
+        return {
+          success: false,
+          message: `볼륨 설정 중 오류가 발생했어요: ${message}`,
+        }
       }
     },
   }
@@ -416,7 +490,7 @@ export function shuffleQueueTool(_client: Client): ToolDefinition {
     },
     async execute(
       _args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const manager = getMusicManager()
@@ -430,11 +504,18 @@ export function shuffleQueueTool(_client: Client): ToolDefinition {
         }
 
         player.queue.shuffle()
-        return { success: true, message: '대기열을 섞었어요.', summary: '대기열을 섞었어요.' }
+        return {
+          success: true,
+          message: '대기열을 섞었어요.',
+          summary: '대기열을 섞었어요.',
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         logger.error('AITool', `shuffle_queue 오류: ${message}`)
-        return { success: false, message: `대기열 셔플 중 오류가 발생했어요: ${message}` }
+        return {
+          success: false,
+          message: `대기열 셔플 중 오류가 발생했어요: ${message}`,
+        }
       }
     },
   }
@@ -444,7 +525,8 @@ export function getMusicStateTool(_client: Client): ToolDefinition {
   return {
     declaration: {
       name: 'get_music_state',
-      description: '현재 음악 재생 상태를 확인합니다. 현재 재생 중인 곡, 진행 시간, 볼륨, 반복 모드, 대기열 정보를 반환해요.',
+      description:
+        '현재 음악 재생 상태를 확인합니다. 현재 재생 중인 곡, 진행 시간, 볼륨, 반복 모드, 대기열 정보를 반환해요.',
       parameters: {
         type: 'object',
         properties: {},
@@ -458,11 +540,13 @@ export function getMusicStateTool(_client: Client): ToolDefinition {
     },
     async execute(
       _args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const manager = getMusicManager()
-        const player = manager.getPlayer(context.guildId) as CustomPlayer | undefined
+        const player = manager.getPlayer(context.guildId) as
+          | CustomPlayer
+          | undefined
 
         if (player === undefined) {
           return {
@@ -485,20 +569,24 @@ export function getMusicStateTool(_client: Client): ToolDefinition {
         const positionMs = player.position
         const tracks = player.queue.tracks
 
-        const currentTrackData = current !== null
-          ? {
-              title: current.info.title,
-              author: current.info.author,
-              durationMs: current.info.duration,
-              positionMs,
-              progress: `${formatDuration(positionMs)} / ${formatDuration(current.info.duration)}`,
-              uri: current.info.uri,
-              artworkUrl: current.info.artworkUrl,
-              sourceName: current.info.sourceName,
-              isStream: current.info.isStream,
-              requesterId: (current.requester as { id?: string })?.id ?? undefined,
-            }
-          : null
+        const currentTrackData =
+          current !== null
+            ? {
+                title: current.info.title,
+                author: current.info.author,
+                durationMs: current.info.duration,
+                positionMs,
+                progress: `${formatDuration(positionMs)} / ${formatDuration(
+                  current.info.duration
+                )}`,
+                uri: current.info.uri,
+                artworkUrl: current.info.artworkUrl,
+                sourceName: current.info.sourceName,
+                isStream: current.info.isStream,
+                requesterId:
+                  (current.requester as { id?: string })?.id ?? undefined,
+              }
+            : null
 
         const queueList = tracks.slice(0, 10).map((t) => ({
           title: t.info.title,
@@ -507,26 +595,44 @@ export function getMusicStateTool(_client: Client): ToolDefinition {
           uri: t.info.uri,
         }))
 
-        const totalQueueDuration = tracks.reduce((sum, t) => sum + (t.info.duration ?? 0), 0)
+        const totalQueueDuration = tracks.reduce(
+          (sum, t) => sum + (t.info.duration ?? 0),
+          0
+        )
 
         let message: string
         if (current !== null) {
           const lines: string[] = []
           lines.push(`🎵 현재 재생 중: ${current.info.title}`)
           lines.push(`👤 아티스트: ${current.info.author}`)
-          lines.push(`⏱️ 진행: ${formatDuration(positionMs)} / ${formatDuration(current.info.duration)}`)
+          lines.push(
+            `⏱️ 진행: ${formatDuration(positionMs)} / ${formatDuration(
+              current.info.duration
+            )}`
+          )
           if (current.info.uri) lines.push(`🔗 링크: ${current.info.uri}`)
           lines.push(`🔁 반복: ${player.repeatMode ?? 'off'}`)
           lines.push(`🔊 볼륨: ${player.volume}`)
           lines.push(player.paused ? '⏸️ 일시정지됨' : '▶️ 재생 중')
-          lines.push(`📋 대기열: ${tracks.length}곡 남음 (총 ${formatDuration(totalQueueDuration)})`)
+          lines.push(
+            `📋 대기열: ${tracks.length}곡 남음 (총 ${formatDuration(
+              totalQueueDuration
+            )})`
+          )
           message = lines.join('\n')
         } else {
           message = '현재 재생 중인 음악이 없어요.'
         }
-        const summary = current !== null
-          ? `재생 중: ${current.info.title} - ${current.info.author} (${formatDuration(positionMs)}/${formatDuration(current.info.duration)}) | 볼륨: ${player.volume} | 반복: ${player.repeatMode ?? 'off'} | 대기열: ${tracks.length}곡`
-          : '재생 중인 음악 없음'
+        const summary =
+          current !== null
+            ? `재생 중: ${current.info.title} - ${
+                current.info.author
+              } (${formatDuration(positionMs)}/${formatDuration(
+                current.info.duration
+              )}) | 볼륨: ${player.volume} | 반복: ${
+                player.repeatMode ?? 'off'
+              } | 대기열: ${tracks.length}곡`
+            : '재생 중인 음악 없음'
 
         return {
           success: true,
@@ -551,7 +657,10 @@ export function getMusicStateTool(_client: Client): ToolDefinition {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         logger.error('AITool', `get_music_state 오류: ${message}`)
-        return { success: false, message: `음악 상태 확인 중 오류가 발생했어요: ${message}` }
+        return {
+          success: false,
+          message: `음악 상태 확인 중 오류가 발생했어요: ${message}`,
+        }
       }
     },
   }
@@ -561,7 +670,8 @@ export function searchMusicTool(_client: Client): ToolDefinition {
   return {
     declaration: {
       name: 'search_music',
-      description: '유튜브/유튜브 뮤직에서 음악을 검색하고 상위 결과를 반환합니다. 재생은 하지 않습니다.',
+      description:
+        '유튜브/유튜브 뮤직에서 음악을 검색하고 상위 결과를 반환합니다. 재생은 하지 않습니다.',
       parameters: {
         type: 'object',
         properties: {
@@ -584,31 +694,40 @@ export function searchMusicTool(_client: Client): ToolDefinition {
     },
     async execute(
       args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
-        const query = (args.query as string ?? '').trim()
+        const query = ((args.query as string) ?? '').trim()
         if (query.length === 0) {
           return { success: false, message: '검색어를 입력해 주세요.' }
         }
 
         const limitInput = Number(args.limit ?? 5)
-        const limit = Number.isInteger(limitInput) && limitInput >= 1 && limitInput <= 10 ? limitInput : 5
+        const limit =
+          Number.isInteger(limitInput) && limitInput >= 1 && limitInput <= 10
+            ? limitInput
+            : 5
 
         // Search is read-only: do NOT require voice channel membership and do NOT create a player.
         // LavalinkManager itself exposes no search method; use a Lavalink node directly via nodeManager.
         const manager = getMusicManager()
         const node = manager.nodeManager.leastUsedNodes()[0]
         if (node === undefined) {
-          return { success: false, message: '현재 사용 가능한 음악 노드가 없어요.' }
+          return {
+            success: false,
+            message: '현재 사용 가능한 음악 노드가 없어요.',
+          }
         }
 
         const searchQuery = buildSearchQuery(query)
         const result = await node.search(
           searchQuery.source !== undefined
-            ? { query: searchQuery.query, source: searchQuery.source as never }
+            ? {
+                query: searchQuery.query,
+                source: searchQuery.source as SearchPlatform,
+              }
             : { query: searchQuery.query },
-          context.userId,
+          context.userId
         )
 
         if (result.loadType === 'error') {
@@ -625,13 +744,21 @@ export function searchMusicTool(_client: Client): ToolDefinition {
 
         const list = tracks
           .map((t, i) => {
-            const dur = t.info.duration !== undefined && t.info.duration > 0 ? ` (${formatDuration(t.info.duration)})` : ''
-            return `${i + 1}. ${t.info.title} - ${t.info.author ?? '알 수 없음'}${dur}`
+            const dur =
+              t.info.duration !== undefined && t.info.duration > 0
+                ? ` (${formatDuration(t.info.duration)})`
+                : ''
+            return `${i + 1}. ${t.info.title} - ${
+              t.info.author ?? '알 수 없음'
+            }${dur}`
           })
           .join('\n')
 
         const summary = `검색 결과:\n${list}`
-        logger.info('AITool', `search_music: ${query} → ${tracks.length}개 결과`)
+        logger.info(
+          'AITool',
+          `search_music: ${query} → ${tracks.length}개 결과`
+        )
         return {
           success: true,
           message: summary,
@@ -648,7 +775,10 @@ export function searchMusicTool(_client: Client): ToolDefinition {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         logger.error('AITool', `search_music 오류: ${message}`)
-        return { success: false, message: `음악 검색 중 오류가 발생했어요: ${message}` }
+        return {
+          success: false,
+          message: `음악 검색 중 오류가 발생했어요: ${message}`,
+        }
       }
     },
   }
@@ -658,13 +788,15 @@ export function seekMusicTool(_client: Client): ToolDefinition {
   return {
     declaration: {
       name: 'seek_music',
-      description: '현재 재생 중인 곡의 특정 위치(초)로 이동합니다. 예: 120초면 2분 위치로 이동해요.',
+      description:
+        '현재 재생 중인 곡의 특정 위치(초)로 이동합니다. 예: 120초면 2분 위치로 이동해요.',
       parameters: {
         type: 'object',
         properties: {
           position_seconds: {
             type: 'integer',
-            description: '이동할 위치 (초 단위). 예: 30 = 30초, 120 = 2분, 0 = 처음',
+            description:
+              '이동할 위치 (초 단위). 예: 30 = 30초, 120 = 2분, 0 = 처음',
           },
         },
         required: ['position_seconds'],
@@ -677,12 +809,15 @@ export function seekMusicTool(_client: Client): ToolDefinition {
     },
     async execute(
       args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const positionSeconds = Number(args.position_seconds)
         if (!Number.isInteger(positionSeconds) || positionSeconds < 0) {
-          return { success: false, message: '이동할 위치는 0 이상의 정수(초)로 입력해 주세요.' }
+          return {
+            success: false,
+            message: '이동할 위치는 0 이상의 정수(초)로 입력해 주세요.',
+          }
         }
 
         const manager = getMusicManager()
@@ -696,25 +831,38 @@ export function seekMusicTool(_client: Client): ToolDefinition {
         }
 
         if (player.queue.current.info.isStream) {
-          return { success: false, message: '라이브 스트리밍은 탐색할 수 없어요.' }
+          return {
+            success: false,
+            message: '라이브 스트리밍은 탐색할 수 없어요.',
+          }
         }
 
         const durationMs = player.queue.current.info.duration
         const positionMs = positionSeconds * 1000
 
         if (positionMs > durationMs) {
-          return { success: false, message: `곡 길이(${formatDuration(durationMs)})를 초과할 수 없어요.` }
+          return {
+            success: false,
+            message: `곡 길이(${formatDuration(
+              durationMs
+            )})를 초과할 수 없어요.`,
+          }
         }
 
         await player.seek(positionMs)
 
-        const summary = `${player.queue.current.info.title} - ${formatDuration(positionMs)} / ${formatDuration(durationMs)} 위치로 이동했어요.`
+        const summary = `${player.queue.current.info.title} - ${formatDuration(
+          positionMs
+        )} / ${formatDuration(durationMs)} 위치로 이동했어요.`
         logger.info('AITool', `seek_music: ${summary}`)
         return { success: true, message: summary, summary }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         logger.error('AITool', `seek_music 오류: ${message}`)
-        return { success: false, message: `곡 탐색 중 오류가 발생했어요: ${message}` }
+        return {
+          success: false,
+          message: `곡 탐색 중 오류가 발생했어요: ${message}`,
+        }
       }
     },
   }
@@ -724,7 +872,8 @@ export function skipTrackTool(_client: Client): ToolDefinition {
   return {
     declaration: {
       name: 'skip_track',
-      description: '현재 재생 중인 곡을 건너뛰고 다음 곡을 재생합니다. 특정 위치의 곡으로 건너뛸 수도 있어요.',
+      description:
+        '현재 재생 중인 곡을 건너뛰고 다음 곡을 재생합니다. 특정 위치의 곡으로 건너뛸 수도 있어요.',
       parameters: {
         type: 'object',
         properties: {
@@ -743,7 +892,7 @@ export function skipTrackTool(_client: Client): ToolDefinition {
     },
     async execute(
       args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const manager = getMusicManager()
@@ -756,14 +905,21 @@ export function skipTrackTool(_client: Client): ToolDefinition {
           return { success: false, message: '현재 재생 중인 곡이 없어요.' }
         }
 
-        const toPosition = args.to_position !== undefined ? Number(args.to_position) : undefined
+        const toPosition =
+          args.to_position !== undefined ? Number(args.to_position) : undefined
 
         if (toPosition !== undefined) {
           if (!Number.isInteger(toPosition) || toPosition < 1) {
-            return { success: false, message: '위치는 1 이상의 정수로 입력해 주세요.' }
+            return {
+              success: false,
+              message: '위치는 1 이상의 정수로 입력해 주세요.',
+            }
           }
           if (toPosition > player.queue.tracks.length) {
-            return { success: false, message: `대기열에는 ${player.queue.tracks.length}곡만 있어요.` }
+            return {
+              success: false,
+              message: `대기열에는 ${player.queue.tracks.length}곡만 있어요.`,
+            }
           }
           await player.skip(toPosition)
           const summary = `${toPosition}번째 곡으로 건너뛰었어요.`
@@ -783,7 +939,10 @@ export function skipTrackTool(_client: Client): ToolDefinition {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         logger.error('AITool', `skip_track 오류: ${message}`)
-        return { success: false, message: `곡 건너뛰기 중 오류가 발생했어요: ${message}` }
+        return {
+          success: false,
+          message: `곡 건너뛰기 중 오류가 발생했어요: ${message}`,
+        }
       }
     },
   }
@@ -812,12 +971,15 @@ export function removeFromQueueTool(_client: Client): ToolDefinition {
     },
     async execute(
       args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const position = Number(args.position)
         if (!Number.isInteger(position) || position < 1) {
-          return { success: false, message: '위치는 1 이상의 정수로 입력해 주세요.' }
+          return {
+            success: false,
+            message: '위치는 1 이상의 정수로 입력해 주세요.',
+          }
         }
 
         const manager = getMusicManager()
@@ -828,7 +990,10 @@ export function removeFromQueueTool(_client: Client): ToolDefinition {
 
         const idx = position - 1 // 0-based
         if (idx >= player.queue.tracks.length) {
-          return { success: false, message: `대기열에는 ${player.queue.tracks.length}곡만 있어요.` }
+          return {
+            success: false,
+            message: `대기열에는 ${player.queue.tracks.length}곡만 있어요.`,
+          }
         }
 
         const removedTrack = player.queue.tracks[idx]
@@ -841,7 +1006,10 @@ export function removeFromQueueTool(_client: Client): ToolDefinition {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         logger.error('AITool', `remove_from_queue 오류: ${message}`)
-        return { success: false, message: `곡 제거 중 오류가 발생했어요: ${message}` }
+        return {
+          success: false,
+          message: `곡 제거 중 오류가 발생했어요: ${message}`,
+        }
       }
     },
   }
@@ -851,7 +1019,8 @@ export function clearQueueTool(_client: Client): ToolDefinition {
   return {
     declaration: {
       name: 'clear_queue',
-      description: '음악 대기열의 모든 곡을 제거합니다. 현재 재생 중인 곡은 계속 재생돼요.',
+      description:
+        '음악 대기열의 모든 곡을 제거합니다. 현재 재생 중인 곡은 계속 재생돼요.',
       parameters: {
         type: 'object',
         properties: {},
@@ -865,7 +1034,7 @@ export function clearQueueTool(_client: Client): ToolDefinition {
     },
     async execute(
       _args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const manager = getMusicManager()
@@ -880,13 +1049,17 @@ export function clearQueueTool(_client: Client): ToolDefinition {
 
         player.queue.splice(0, player.queue.tracks.length)
 
-        const summary = '대기열의 모든 곡을 제거했어요. 현재 곡은 계속 재생됩니다.'
+        const summary =
+          '대기열의 모든 곡을 제거했어요. 현재 곡은 계속 재생됩니다.'
         logger.info('AITool', `clear_queue: ${summary}`)
         return { success: true, message: summary, summary }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         logger.error('AITool', `clear_queue 오류: ${message}`)
-        return { success: false, message: `대기열 초기화 중 오류가 발생했어요: ${message}` }
+        return {
+          success: false,
+          message: `대기열 초기화 중 오류가 발생했어요: ${message}`,
+        }
       }
     },
   }

@@ -25,7 +25,14 @@ export type ToolDefinitionInput = {
   readonly description: string
   readonly parameters: {
     readonly type: 'object'
-    readonly properties: Record<string, { readonly type: string; readonly description: string; readonly enum?: readonly string[] }>
+    readonly properties: Record<
+      string,
+      {
+        readonly type: string
+        readonly description: string
+        readonly enum?: readonly string[]
+      }
+    >
     readonly required: readonly string[]
   }
   readonly execute: (args: Record<string, unknown>) => Promise<unknown>
@@ -46,12 +53,14 @@ export type ProviderAdapter = {
   readonly generate: (
     prompt: string,
     history?: readonly ChatMessage[],
-    options?: GenerateOptions,
+    options?: GenerateOptions
   ) => Promise<GenerateResult>
 }
 
 export function assertCanUseAiManagement(input: AiPermissionInput): void {
   if (!input.administrator && !input.manageGuild) {
-    throw new Error('서버 관리 권한이 있는 사용자만 AI 관리 기능을 사용할 수 있어요.')
+    throw new Error(
+      '서버 관리 권한이 있는 사용자만 AI 관리 기능을 사용할 수 있어요.'
+    )
   }
 }

@@ -1,8 +1,12 @@
-import { MessageFlags, type ChatInputCommandInteraction, type InteractionReplyOptions } from 'discord.js'
+import {
+  type ChatInputCommandInteraction,
+  type InteractionReplyOptions,
+  MessageFlags,
+} from 'discord.js'
 
 export async function replyEphemeral(
   interaction: ChatInputCommandInteraction,
-  content: string,
+  content: string
 ): Promise<void> {
   const options: InteractionReplyOptions = {
     content,
@@ -19,7 +23,7 @@ export async function replyEphemeral(
 
 export async function replyPublic(
   interaction: ChatInputCommandInteraction,
-  content: string,
+  content: string
 ): Promise<void> {
   const options: InteractionReplyOptions = {
     content,

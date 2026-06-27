@@ -1,5 +1,5 @@
-import { getSupabase } from '../ai/supabase'
 import { formatWon } from '../../config/korea'
+import { getSupabase } from '../ai/supabase'
 
 export type BalanceResult = {
   readonly amount: number
@@ -39,23 +39,50 @@ export type DropLeaderboardEntry = {
 }
 
 export type EconomyService = {
-  readonly addBalance: (userId: string, amount: number) => Promise<BalanceResult>
+  readonly addBalance: (
+    userId: string,
+    amount: number
+  ) => Promise<BalanceResult>
   readonly claimAttendance: (input: AttendanceInput) => Promise<EconomyMessage>
   readonly getBalance: (userId: string) => Promise<BalanceResult>
   readonly transfer: (input: TransferInput) => Promise<EconomyMessage>
-  readonly recordGamble: (userId: string, bet: number, won: number, win: boolean) => Promise<void>
+  readonly recordGamble: (
+    userId: string,
+    bet: number,
+    won: number,
+    win: boolean
+  ) => Promise<void>
   readonly getRanking: (limit?: number) => Promise<RankingEntry[]>
-  readonly recordQuestProgress: (userId: string, questType: 'gamble' | 'rps') => Promise<void>
+  readonly recordQuestProgress: (
+    userId: string,
+    questType: 'gamble' | 'rps'
+  ) => Promise<void>
   readonly getQuestProgress: (userId: string) => Promise<QuestProgress>
   readonly claimQuestReward: (userId: string) => Promise<EconomyMessage>
   readonly claimLottery: (userId: string) => Promise<LotteryResult>
   readonly recordActivity: (userId: string) => Promise<number>
-  readonly getRandomDropSettings: (guildId: string) => Promise<RandomDropSettings | null>
-  readonly setRandomDropSettings: (guildId: string, settings: Partial<RandomDropSettings>) => Promise<void>
+  readonly getRandomDropSettings: (
+    guildId: string
+  ) => Promise<RandomDropSettings | null>
+  readonly setRandomDropSettings: (
+    guildId: string,
+    settings: Partial<RandomDropSettings>
+  ) => Promise<void>
   readonly createRandomDrop: (guildId: string) => Promise<RandomDrop | null>
-  readonly claimRandomDrop: (dropId: string, userId: string, maxClaims: number) => Promise<number | null>
-  readonly recordDropClaim: (userId: string, guildId: string, amount: number) => Promise<void>
-  readonly getDropLeaderboard: (guildId: string, limit?: number) => Promise<DropLeaderboardEntry[]>
+  readonly claimRandomDrop: (
+    dropId: string,
+    userId: string,
+    maxClaims: number
+  ) => Promise<number | null>
+  readonly recordDropClaim: (
+    userId: string,
+    guildId: string,
+    amount: number
+  ) => Promise<void>
+  readonly getDropLeaderboard: (
+    guildId: string,
+    limit?: number
+  ) => Promise<DropLeaderboardEntry[]>
 }
 
 export type RandomDropSettings = {
@@ -66,6 +93,7 @@ export type RandomDropSettings = {
   readonly startHour: number
   readonly endHour: number
   readonly channelId: string | null
+  readonly adminChannelId: string | null
 }
 
 export type RandomDrop = {
@@ -90,7 +118,6 @@ const questReward = 5000
 const questGambleRequired = 3
 const questRpsRequired = 1
 const activityRewardPer = 100
-const activityMessagesPerReward = 10
 const activityMaxRewards = 5
 
 export function createEconomyService(): EconomyService {
@@ -108,7 +135,10 @@ export function createEconomyService(): EconomyService {
     return balanceResult(data?.balance ?? 0)
   }
 
-  async function addBalance(userId: string, amount: number): Promise<BalanceResult> {
+  async function addBalance(
+    userId: string,
+    amount: number
+  ): Promise<BalanceResult> {
     assertPositiveAmount(amount)
 
     const supabase = getSupabase()
@@ -141,7 +171,9 @@ export function createEconomyService(): EconomyService {
     return { message: `${formatWon(input.amount)}을(를) 송금했어요.` }
   }
 
-  async function claimAttendance(input: AttendanceInput): Promise<EconomyMessage> {
+  async function claimAttendance(
+    input: AttendanceInput
+  ): Promise<EconomyMessage> {
     const supabase = getSupabase()
     if (supabase === null) throw new Error('Supabase가 설정되지 않았습니다.')
 
@@ -159,7 +191,12 @@ export function createEconomyService(): EconomyService {
     return { message: `출석 보상 ${formatWon(attendanceReward)}을 받았어요.` }
   }
 
-  async function recordGamble(userId: string, bet: number, won: number, win: boolean): Promise<void> {
+  async function recordGamble(
+    userId: string,
+    bet: number,
+    won: number,
+    win: boolean
+  ): Promise<void> {
     const supabase = getSupabase()
     if (supabase === null) return
 
@@ -173,11 +210,13 @@ export function createEconomyService(): EconomyService {
     if (error !== null) throw new Error(`도박 기록 실패: ${error.message}`)
   }
 
-  async function getRanking(limit: number = 10): Promise<RankingEntry[]> {
+  async function getRanking(limit = 10): Promise<RankingEntry[]> {
     const supabase = getSupabase()
     if (supabase === null) return []
 
-    const { data, error } = await supabase.rpc('get_gambling_ranking', { p_limit: limit })
+    const { data, error } = await supabase.rpc('get_gambling_ranking', {
+      p_limit: limit,
+    })
 
     if (error !== null) throw new Error(`순위 조회 실패: ${error.message}`)
     if (data === null) return []
@@ -193,7 +232,10 @@ export function createEconomyService(): EconomyService {
     }))
   }
 
-  async function recordQuestProgress(userId: string, questType: 'gamble' | 'rps'): Promise<void> {
+  async function recordQuestProgress(
+    userId: string,
+    questType: 'gamble' | 'rps'
+  ): Promise<void> {
     const supabase = getSupabase()
     if (supabase === null) return
 
@@ -209,7 +251,8 @@ export function createEconomyService(): EconomyService {
 
   async function getQuestProgress(userId: string): Promise<QuestProgress> {
     const supabase = getSupabase()
-    if (supabase === null) return { gambleCount: 0, rpsCount: 0, claimed: false }
+    if (supabase === null)
+      return { gambleCount: 0, rpsCount: 0, claimed: false }
 
     const today = koreanDateKey(new Date())
     const { data, error } = await supabase
@@ -242,14 +285,19 @@ export function createEconomyService(): EconomyService {
       p_reward: questReward,
     })
 
-    if (error !== null) throw new Error(`퀘스트 보상 수령 실패: ${error.message}`)
+    if (error !== null)
+      throw new Error(`퀘스트 보상 수령 실패: ${error.message}`)
     if (data === false) {
       const progress = await getQuestProgress(userId)
       if (progress.claimed) throw new Error('오늘 퀘스트 보상은 이미 받았어요.')
-      throw new Error(`퀘스트 미완료! 도박 ${progress.gambleCount}/${questGambleRequired}, 가위바위보 ${progress.rpsCount}/${questRpsRequired}`)
+      throw new Error(
+        `퀘스트 미완료! 도박 ${progress.gambleCount}/${questGambleRequired}, 가위바위보 ${progress.rpsCount}/${questRpsRequired}`
+      )
     }
 
-    return { message: `일일 퀘스트 완료! ${formatWon(questReward)}을 받았어요. 🎉` }
+    return {
+      message: `일일 퀘스트 완료! ${formatWon(questReward)}을 받았어요. 🎉`,
+    }
   }
 
   async function claimLottery(userId: string): Promise<LotteryResult> {
@@ -269,15 +317,16 @@ export function createEconomyService(): EconomyService {
     if (data === -1) throw new Error('이번 주 복권은 이미 참여했어요.')
 
     const prize = Number(data ?? 0)
-    const message = prize >= 1000000
-      ? `🎉 대박! ${formatWon(prize)} 당첨!`
-      : prize >= 100000
+    const message =
+      prize >= 1000000
+        ? `🎉 대박! ${formatWon(prize)} 당첨!`
+        : prize >= 100000
         ? `🥳 ${formatWon(prize)} 당첨!`
         : prize >= 10000
-          ? `😊 ${formatWon(prize)} 당첨!`
-          : prize > 0
-            ? `소소하게 ${formatWon(prize)} 당첨!`
-            : `꽝! 다음 주에 다시 도전해요.`
+        ? `😊 ${formatWon(prize)} 당첨!`
+        : prize > 0
+        ? `소소하게 ${formatWon(prize)} 당첨!`
+        : `꽝! 다음 주에 다시 도전해요.`
 
     return { prize, message }
   }
@@ -298,7 +347,9 @@ export function createEconomyService(): EconomyService {
     return Number(data ?? 0)
   }
 
-  async function getRandomDropSettings(guildId: string): Promise<RandomDropSettings | null> {
+  async function getRandomDropSettings(
+    guildId: string
+  ): Promise<RandomDropSettings | null> {
     const supabase = getSupabase()
     if (supabase === null) return null
 
@@ -318,10 +369,14 @@ export function createEconomyService(): EconomyService {
       startHour: data.start_hour ?? 4,
       endHour: data.end_hour ?? 23,
       channelId: data.channel_id ?? null,
+      adminChannelId: data.admin_channel_id ?? null,
     }
   }
 
-  async function setRandomDropSettings(guildId: string, settings: Partial<RandomDropSettings>): Promise<void> {
+  async function setRandomDropSettings(
+    guildId: string,
+    settings: Partial<RandomDropSettings>
+  ): Promise<void> {
     const supabase = getSupabase()
     if (supabase === null) return
 
@@ -329,10 +384,13 @@ export function createEconomyService(): EconomyService {
     if (settings.enabled !== undefined) update.enabled = settings.enabled
     if (settings.minAmount !== undefined) update.min_amount = settings.minAmount
     if (settings.maxAmount !== undefined) update.max_amount = settings.maxAmount
-    if (settings.dropsPerDay !== undefined) update.drops_per_day = settings.dropsPerDay
+    if (settings.dropsPerDay !== undefined)
+      update.drops_per_day = settings.dropsPerDay
     if (settings.startHour !== undefined) update.start_hour = settings.startHour
     if (settings.endHour !== undefined) update.end_hour = settings.endHour
     if (settings.channelId !== undefined) update.channel_id = settings.channelId
+    if (settings.adminChannelId !== undefined)
+      update.admin_channel_id = settings.adminChannelId
 
     const { error } = await supabase
       .from('random_drops')
@@ -348,16 +406,19 @@ export function createEconomyService(): EconomyService {
     const settings = await getRandomDropSettings(guildId)
     if (settings === null || !settings.enabled) return null
 
-    const amount = Math.floor(Math.random() * (settings.maxAmount - settings.minAmount + 1)) + settings.minAmount
-    const dropId = `${guildId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const amount =
+      Math.floor(
+        Math.random() * (settings.maxAmount - settings.minAmount + 1)
+      ) + settings.minAmount
+    const dropId = `${guildId}-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`
 
-    const { error } = await supabase
-      .from('random_drop_claims')
-      .insert({
-        drop_id: dropId,
-        guild_id: guildId,
-        claimed_by: [],
-      })
+    const { error } = await supabase.from('random_drop_claims').insert({
+      drop_id: dropId,
+      guild_id: guildId,
+      claimed_by: [],
+    })
 
     if (error !== null) throw new Error(`선착 보상 생성 실패: ${error.message}`)
 
@@ -369,7 +430,11 @@ export function createEconomyService(): EconomyService {
     }
   }
 
-  async function claimRandomDrop(dropId: string, userId: string, maxClaims: number): Promise<number | null> {
+  async function claimRandomDrop(
+    dropId: string,
+    userId: string,
+    maxClaims: number
+  ): Promise<number | null> {
     const supabase = getSupabase()
     if (supabase === null) return null
 
@@ -396,7 +461,11 @@ export function createEconomyService(): EconomyService {
     return claimedBy.length
   }
 
-  async function recordDropClaim(userId: string, guildId: string, amount: number): Promise<void> {
+  async function recordDropClaim(
+    userId: string,
+    guildId: string,
+    amount: number
+  ): Promise<void> {
     const supabase = getSupabase()
     if (supabase === null) return
 
@@ -406,10 +475,14 @@ export function createEconomyService(): EconomyService {
       p_amount: amount,
     })
 
-    if (error !== null) throw new Error(`선착 보상 통계 기록 실패: ${error.message}`)
+    if (error !== null)
+      throw new Error(`선착 보상 통계 기록 실패: ${error.message}`)
   }
 
-  async function getDropLeaderboard(guildId: string, limit: number = 10): Promise<DropLeaderboardEntry[]> {
+  async function getDropLeaderboard(
+    guildId: string,
+    limit = 10
+  ): Promise<DropLeaderboardEntry[]> {
     const supabase = getSupabase()
     if (supabase === null) return []
 
@@ -472,13 +545,17 @@ function koreanDateKey(date: Date): string {
 }
 
 function koreanWeekKey(date: Date): string {
-  const koreanDate = new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
+  const koreanDate = new Date(
+    date.toLocaleString('en-US', { timeZone: 'Asia/Seoul' })
+  )
   const year = koreanDate.getFullYear()
   const start = new Date(koreanDate)
   start.setHours(0, 0, 0, 0)
   const dayOfWeek = start.getDay()
   const monday = new Date(start)
   monday.setDate(start.getDate() - ((dayOfWeek + 6) % 7))
-  const weekNum = Math.ceil(((monday.getTime() - new Date(year, 0, 1).getTime()) / 86400000 + 1) / 7)
+  const weekNum = Math.ceil(
+    ((monday.getTime() - new Date(year, 0, 1).getTime()) / 86400000 + 1) / 7
+  )
   return `${year}-W${String(weekNum).padStart(2, '0')}`
 }

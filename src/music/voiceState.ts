@@ -10,7 +10,10 @@ export type VoiceChannelSnapshot = {
 
 export function isBotAlone(snapshot: VoiceChannelSnapshot): boolean {
   const humans = countHumansInChannel(snapshot)
-  return humans === 0 && snapshot.members.some((member) => member.id === snapshot.botId)
+  return (
+    humans === 0 &&
+    snapshot.members.some((member) => member.id === snapshot.botId)
+  )
 }
 
 export function countHumansInChannel(snapshot: VoiceChannelSnapshot): number {

@@ -1,5 +1,9 @@
+import type {
+  ToolDefinition,
+  ToolExecutionContext,
+  ToolResult,
+} from '../toolTypes'
 import { Client } from 'discord.js'
-import type { ToolDefinition, ToolExecutionContext, ToolResult } from '../toolTypes'
 
 const ALLOWED_GUILD_ID = '1440598081648328816'
 
@@ -32,13 +36,16 @@ export function sendStickerTool(client: Client): ToolDefinition {
     hidden: true,
     async execute(
       args: Record<string, unknown>,
-      context: ToolExecutionContext,
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
         const stickerId = (args.sticker_id as string | undefined)?.trim()
         const messageText = (args.message as string | undefined)?.trim()
         if (!stickerId) {
-          return { success: false, message: '전송할 스티커 ID를 입력해 주세요.' }
+          return {
+            success: false,
+            message: '전송할 스티커 ID를 입력해 주세요.',
+          }
         }
 
         const channel = client.channels.cache.get(context.channelId)
@@ -47,7 +54,10 @@ export function sendStickerTool(client: Client): ToolDefinition {
         }
 
         if (!channel.isTextBased() || !('send' in channel)) {
-          return { success: false, message: '이 채널에는 메시지를 전송할 수 없어요.' }
+          return {
+            success: false,
+            message: '이 채널에는 메시지를 전송할 수 없어요.',
+          }
         }
 
         const stickerGuild = client.guilds.cache.get(ALLOWED_GUILD_ID)
@@ -58,10 +68,16 @@ export function sendStickerTool(client: Client): ToolDefinition {
         const stickers = await stickerGuild.stickers.fetch()
         const sticker = stickers.get(stickerId)
         if (sticker === undefined) {
-          return { success: false, message: '해당 ID의 스티커를 찾을 수 없어요.' }
+          return {
+            success: false,
+            message: '해당 ID의 스티커를 찾을 수 없어요.',
+          }
         }
 
-        const sentMessage = await channel.send({ content: messageText ?? '', stickers: [stickerId] })
+        const sentMessage = await channel.send({
+          content: messageText ?? '',
+          stickers: [stickerId],
+        })
 
         return {
           success: true,
