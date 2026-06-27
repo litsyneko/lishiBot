@@ -12,6 +12,14 @@ import { editThreadTool, readThreadMessagesTool } from './tools/threadTools'
 import { listForumPostsTool, readForumPostTool } from './tools/forumTools'
 import { getServerInfoTool } from './tools/serverTools'
 import { lookupMemberTool } from './tools/memberTools'
+import {
+  banMemberTool,
+  kickMemberTool,
+  removeTimeoutMemberTool,
+  timeoutMemberTool,
+  unbanMemberTool,
+} from './tools/memberActionTools'
+import { voiceActionTool, voiceMemberLookupTool } from './tools/voiceTools'
 import { listRolesTool, lookupRoleTool } from './tools/roleTools'
 import {
   listCategoryChannelsTool,
@@ -57,6 +65,13 @@ export function createToolRegistry(client: Client): ToolRegistry {
   register(readForumPostTool(client))
   register(getServerInfoTool(client))
   register(lookupMemberTool(client))
+  register(voiceMemberLookupTool(client))
+  register(voiceActionTool(client))
+  register(timeoutMemberTool(client))
+  register(removeTimeoutMemberTool(client))
+  register(banMemberTool(client))
+  register(unbanMemberTool(client))
+  register(kickMemberTool(client))
   register(listRolesTool(client))
   register(lookupRoleTool(client))
   register(listCategoryChannelsTool(client))

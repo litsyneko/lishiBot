@@ -10,6 +10,11 @@ import {
 import { formatKoreanDateTime } from '../config/korea'
 import { requireServerManager } from '../utils/permissions'
 import { replyEphemeral } from '../utils/replies'
+import {
+  disableSoundboardGuard,
+  enableSoundboardGuard,
+  isSoundboardGuardEnabled,
+} from '../features/soundboard/soundboardGuardStore'
 
 const adminGroup = new SubCommandGroup({ name: '서버', description: 'FullMoon 서버 관리 명령어' })
 
@@ -107,6 +112,24 @@ class AdminExtensionClass extends Extension {
       `${member.displayName}님의 서버 관리 권한 점검입니다.\n` +
         `기준 시각: ${formatKoreanDateTime(new Date())}\n\n${rows.join('\n')}`,
     )
+  }
+
+  @adminGroup.command({ name: '사운드보드', description: '사운드보드 스팸 방지 기능을 켜거나 끕니다.' })
+  async toggleSoundboardGuard(i: ChatInputCommandInteraction) {
+    requireServerManager(i)
+
+    const guild = i.guild
+    if (guild === null) {
+      return
+    }
+
+    if (isSoundboardGuardEnabled(guild.id)) {
+      await disableSoundboardGuard(guild.id)
+      await replyEphemeral(i, '🔇 사운드보드 스팸 방지를 **해제**했어요.')
+    } else {
+      await enableSoundboardGuard(guild.id)
+      await replyEphemeral(i, '🔊 사운드보드 스팸 방지를 **활성화**했어요.\n10초 내 15회 초과 사용 시 30초 음소거됩니다.')
+    }
   }
 }
 
