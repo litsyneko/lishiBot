@@ -1,4 +1,4 @@
-import { ChannelType, Client, GuildBasedChannel, PermissionFlagsBits, TextChannel, NewsChannel } from 'discord.js'
+import { ChannelType, Client, Collection, GuildBasedChannel, PermissionFlagsBits, TextChannel, NewsChannel, type Message } from 'discord.js'
 import { Routes } from 'discord-api-types/v10'
 import type { ToolDefinition, ToolExecutionContext, ToolResult } from '../toolTypes'
 import { resolveGuild } from '../helpers/resolveGuild'
@@ -604,8 +604,14 @@ export function listChannelsTool(client: Client): ToolDefinition {
 
 // ─── readChannelMessagesTool ───
 
-function isTextBasedChannel(channel: GuildBasedChannel): channel is TextChannel | NewsChannel {
-  return channel.type === ChannelType.GuildText || channel.type === ChannelType.GuildAnnouncement
+type ReadableChannel = GuildBasedChannel & {
+  messages: {
+    fetch: (opts: { limit: number; before?: string; after?: string }) => Promise<Collection<string, Message<true>>>
+  }
+}
+
+function isReadableChannel(channel: GuildBasedChannel): channel is ReadableChannel {
+  return channel.isTextBased()
 }
 
 export function readChannelMessagesTool(client: Client): ToolDefinition {
@@ -681,8 +687,8 @@ export function readChannelMessagesTool(client: Client): ToolDefinition {
           return { success: false, message: '채널을 찾을 수 없어요.' }
         }
 
-        if (!isTextBasedChannel(channel)) {
-          return { success: false, message: '텍스트 채널 또는 공지 채널에서만 메시지를 읽을 수 있어요.' }
+        if (!isReadableChannel(channel)) {
+          return { success: false, message: '이 채널에서는 메시지를 읽을 수 없어요.' }
         }
 
         const me = guild.members.me
@@ -743,7 +749,10 @@ export function readChannelMessagesTool(client: Client): ToolDefinition {
             channel: {
               id: channel.id,
               name: channel.name,
-              type: channel.type === ChannelType.GuildAnnouncement ? 'announcement' : 'text',
+              type: channel.type === ChannelType.GuildAnnouncement ? 'announcement'
+                : channel.type === ChannelType.GuildVoice ? 'voice'
+                : channel.type === ChannelType.GuildStageVoice ? 'stage'
+                : 'text',
             },
             messages,
             hasMore: fetched.size === limit,

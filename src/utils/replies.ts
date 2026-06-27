@@ -16,3 +16,19 @@ export async function replyEphemeral(
 
   await interaction.reply(options)
 }
+
+export async function replyPublic(
+  interaction: ChatInputCommandInteraction,
+  content: string,
+): Promise<void> {
+  const options: InteractionReplyOptions = {
+    content,
+  }
+
+  if (interaction.deferred || interaction.replied) {
+    await interaction.followUp(options)
+    return
+  }
+
+  await interaction.reply(options)
+}

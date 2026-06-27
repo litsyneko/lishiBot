@@ -105,11 +105,11 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 DECLARE
-  current_date TEXT;
+  saved_date TEXT;
 BEGIN
-  SELECT attendance_date INTO current_date FROM accounts WHERE user_id = p_user_id FOR UPDATE;
+  SELECT attendance_date INTO saved_date FROM accounts WHERE user_id = p_user_id FOR UPDATE;
 
-  IF current_date IS NULL THEN
+  IF saved_date IS NULL THEN
     INSERT INTO accounts (user_id, balance, attendance_date)
     VALUES (p_user_id, p_reward, p_today)
     ON CONFLICT (user_id) DO UPDATE
@@ -118,7 +118,7 @@ BEGIN
     RETURN TRUE;
   END IF;
 
-  IF current_date = p_today THEN
+  IF saved_date = p_today THEN
     RETURN FALSE;
   END IF;
 

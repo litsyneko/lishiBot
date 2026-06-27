@@ -1,119 +1,18 @@
 import { Extension, SubCommandGroup, option } from '@pikokr/command.ts'
-import {
-  ApplicationCommandOptionType,
-  type CategoryChannel,
-  ChannelType,
-  ChatInputCommandInteraction,
-  type GuildBasedChannel,
-  PermissionFlagsBits,
-} from 'discord.js'
-import { formatKoreanDateTime } from '../config/korea'
+import { ApplicationCommandOptionType, ChatInputCommandInteraction } from 'discord.js'
 import { requireServerManager } from '../utils/permissions'
-import { replyEphemeral } from '../utils/replies'
+import { replyPublic } from '../utils/replies'
 import {
   disableSoundboardGuard,
   enableSoundboardGuard,
   isSoundboardGuardEnabled,
 } from '../features/soundboard/soundboardGuardStore'
+import { createEconomyService } from '../features/economy/economy'
 
 const adminGroup = new SubCommandGroup({ name: '서버', description: 'FullMoon 서버 관리 명령어' })
-
-function channelTypeLabel(type: ChannelType): string {
-  switch (type) {
-    case ChannelType.GuildAnnouncement:
-      return '공지'
-    case ChannelType.GuildCategory:
-      return '카테고리'
-    case ChannelType.GuildForum:
-      return '포럼'
-    case ChannelType.GuildStageVoice:
-      return '스테이지'
-    case ChannelType.GuildText:
-      return '텍스트'
-    case ChannelType.GuildVoice:
-      return '음성'
-    default:
-      return '기타'
-  }
-}
-
-function formatChannelLine(channel: GuildBasedChannel): string {
-  return `- ${channel.name} (${channelTypeLabel(channel.type)})`
-}
+const economy = createEconomyService()
 
 class AdminExtensionClass extends Extension {
-  @adminGroup.command({ name: '채널', description: '서버 채널 목록을 확인합니다.' })
-  async channels(i: ChatInputCommandInteraction) {
-    requireServerManager(i)
-
-    const guild = i.guild
-    if (guild === null) {
-      return
-    }
-
-    const channels = [...guild.channels.cache.values()]
-      .filter((channel) => channel.type !== ChannelType.GuildCategory)
-      .sort((left, right) => left.name.localeCompare(right.name, 'ko-KR'))
-      .slice(0, 25)
-      .map(formatChannelLine)
-
-    const body = channels.length > 0 ? channels.join('\n') : '표시할 채널이 없어요.'
-    await replyEphemeral(i, `현재 서버 채널 목록입니다.\n\n${body}`)
-  }
-
-  @adminGroup.command({ name: '카테고리', description: '서버 카테고리 목록을 확인합니다.' })
-  async categories(i: ChatInputCommandInteraction) {
-    requireServerManager(i)
-
-    const guild = i.guild
-    if (guild === null) {
-      return
-    }
-
-    const categories = [...guild.channels.cache.values()]
-      .filter((channel): channel is CategoryChannel => channel.type === ChannelType.GuildCategory)
-      .sort((left, right) => left.rawPosition - right.rawPosition)
-      .map((channel) => `- ${channel.name}`)
-
-    const body = categories.length > 0 ? categories.join('\n') : '카테고리가 아직 없어요.'
-    await replyEphemeral(i, `현재 서버 카테고리 목록입니다.\n\n${body}`)
-  }
-
-  @adminGroup.command({ name: '권한점검', description: '멤버의 서버 관리 권한을 점검합니다.' })
-  async auditPermissions(
-    i: ChatInputCommandInteraction,
-    @option({
-      type: ApplicationCommandOptionType.User,
-      name: '사용자',
-      description: '권한을 확인할 사용자',
-      required: true,
-    })
-    _user: unknown,
-  ) {
-    requireServerManager(i)
-
-    const guild = i.guild
-    if (guild === null) {
-      return
-    }
-
-    const user = i.options.getUser('사용자', true)
-    const member = await guild.members.fetch(user.id)
-    const permissions = member.permissions
-    const rows = [
-      `관리자: ${permissions.has(PermissionFlagsBits.Administrator) ? '가능' : '불가'}`,
-      `서버 관리: ${permissions.has(PermissionFlagsBits.ManageGuild) ? '가능' : '불가'}`,
-      `채널 관리: ${permissions.has(PermissionFlagsBits.ManageChannels) ? '가능' : '불가'}`,
-      `역할 관리: ${permissions.has(PermissionFlagsBits.ManageRoles) ? '가능' : '불가'}`,
-    ]
-
-    await replyEphemeral(
-      i,
-      `${member.displayName}님의 서버 관리 권한 점검입니다.\n` +
-        `기준 시각: ${formatKoreanDateTime(new Date())}\n\n${rows.join('\n')}`,
-    )
-  }
-
   @adminGroup.command({ name: '사운드보드', description: '사운드보드 스팸 방지 기능을 켜거나 끕니다.' })
   async toggleSoundboardGuard(i: ChatInputCommandInteraction) {
     requireServerManager(i)
@@ -125,10 +24,90 @@ class AdminExtensionClass extends Extension {
 
     if (isSoundboardGuardEnabled(guild.id)) {
       await disableSoundboardGuard(guild.id)
-      await replyEphemeral(i, '🔇 사운드보드 스팸 방지를 **해제**했어요.')
+      await replyPublic(i, '🔇 사운드보드 스팸 방지를 **해제**했어요.')
     } else {
       await enableSoundboardGuard(guild.id)
-      await replyEphemeral(i, '🔊 사운드보드 스팸 방지를 **활성화**했어요.\n10초 내 15회 초과 사용 시 30초 음소거됩니다.')
+      await replyPublic(i, '🔊 사운드보드 스팸 방지를 **활성화**했어요.\n10초 내 15회 초과 사용 시 30초 음소거됩니다.')
+    }
+  }
+
+  @adminGroup.command({ name: '선착보상', description: '선착 보상 설정을 켜거나 끕니다. (기본: 4시~23시, 4회, 1천~5만원)' })
+  async toggleRandomDrop(
+    i: ChatInputCommandInteraction,
+    @option({
+      type: ApplicationCommandOptionType.Channel,
+      name: '채널',
+      description: '보상을 전송할 채널 (지정 안 하면 시스템 채널)',
+      required: false,
+    })
+    _channel: unknown,
+    @option({
+      type: ApplicationCommandOptionType.Integer,
+      name: '최소금액',
+      description: '최소 지급 금액 (기본: 1000)',
+      min_value: 1,
+      required: false,
+    })
+    minAmount: number,
+    @option({
+      type: ApplicationCommandOptionType.Integer,
+      name: '최대금액',
+      description: '최대 지급 금액 (기본: 50000)',
+      min_value: 1,
+      required: false,
+    })
+    maxAmount: number,
+    @option({
+      type: ApplicationCommandOptionType.Integer,
+      name: '시작시간',
+      description: '보상 시작 시간 (0~23, 기본: 4)',
+      min_value: 0,
+      max_value: 23,
+      required: false,
+    })
+    startHour: number,
+    @option({
+      type: ApplicationCommandOptionType.Integer,
+      name: '종료시간',
+      description: '보상 종료 시간 (1~24, 기본: 23)',
+      min_value: 1,
+      max_value: 24,
+      required: false,
+    })
+    endHour: number,
+  ) {
+    requireServerManager(i)
+
+    const guild = i.guild
+    if (guild === null) {
+      return
+    }
+
+    const settings = await economy.getRandomDropSettings(guild.id)
+    const currentlyEnabled = settings?.enabled ?? false
+
+    if (currentlyEnabled) {
+      await economy.setRandomDropSettings(guild.id, { enabled: false })
+      await replyPublic(i, '🎁 선착 보상을 **해제**했어요.')
+    } else {
+      const min = minAmount || settings?.minAmount || 1000
+      const max = maxAmount || settings?.maxAmount || 50000
+      const start = startHour || settings?.startHour || 4
+      const end = endHour || settings?.endHour || 23
+      const targetChannel = i.options.getChannel('채널', false)
+      const channelId = targetChannel?.id ?? settings?.channelId ?? null
+
+      await economy.setRandomDropSettings(guild.id, {
+        enabled: true,
+        minAmount: min,
+        maxAmount: max,
+        startHour: start,
+        endHour: end,
+        channelId,
+      })
+
+      const channelLabel = channelId ? `<#${channelId}>` : '시스템 채널'
+      await replyPublic(i, `🎁 선착 보상을 **활성화**했어요.\n전송 채널: ${channelLabel}\n지급 금액: ${min.toLocaleString()}원 ~ ${max.toLocaleString()}원\n${start}시~${end}시 사이에 하루 4회 랜덤 발송, 선착 4명 수령`)
     }
   }
 }
