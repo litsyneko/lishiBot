@@ -1,6 +1,5 @@
 import { createMusicSettingsService } from '../features/music/musicSettings'
 import { createAudioService } from '../music/audioService'
-import type { AudioService } from '../music/audioService'
 import type { CustomPlayer } from '../music/customPlayer'
 import {
   type RepeatMode,
@@ -8,6 +7,11 @@ import {
   paginateQueue,
   parseSeekInput,
 } from '../music/musicService'
+import {
+  type PlaybackBot,
+  getPlaybackBotRegistry,
+  hasPlaybackBotRegistry,
+} from '../music/playbackBotRegistry'
 import { setVolume } from '../music/volumeStore'
 import { logger } from '../utils/logger'
 import { replyEphemeral } from '../utils/replies'
@@ -59,10 +63,6 @@ function requireManager(): LavalinkManager<CustomPlayer> {
   return lavalinkManager
 }
 
-function requireAudioService(): AudioService {
-  return createAudioService(requireManager())
-}
-
 function requireGuild(interaction: ChatInputCommandInteraction): string {
   const guild = interaction.guild
   if (guild === null) {
@@ -103,7 +103,20 @@ class MusicExtensionClass extends Extension {
       required: true,
       autocomplete: true,
     })
-    query: string
+    query: string,
+    @option({
+      type: ApplicationCommandOptionType.String,
+      name: '봇',
+      description: '재생할 봇 선택 (기본: 자동)',
+      choices: [
+        { name: '메인', value: 'main' },
+        { name: '부계정 1번', value: 'sub1' },
+        { name: '부계정 2번', value: 'sub2' },
+        { name: '부계정 3번', value: 'sub3' },
+      ],
+      required: false,
+    })
+    botChoice: string
   ) {
     try {
       const guildId = requireGuild(i)
@@ -112,7 +125,37 @@ class MusicExtensionClass extends Extension {
 
       await i.deferReply()
 
-      const audio = requireAudioService()
+      let manager: LavalinkManager<CustomPlayer>
+      let botLabel = '메인'
+
+      if (hasPlaybackBotRegistry()) {
+        const registry = getPlaybackBotRegistry()
+        let bot: PlaybackBot | undefined
+
+        const existing = registry.getBotByVoiceChannel(guildId, voiceChannelId)
+        if (existing !== undefined) {
+          bot = existing
+        } else {
+          bot = registry.getIdleBot(botChoice)
+        }
+
+        if (bot === undefined) {
+          const statusList = registry.bots.map(
+            (b) => `**${b.label}**: ${b.getStatus()}`
+          )
+          await i.editReply(
+            `사용 가능한 음악 봇이 없어요.\n${statusList.join('\n')}`
+          )
+          return
+        }
+
+        manager = bot.manager
+        botLabel = bot.label
+      } else {
+        manager = requireManager()
+      }
+
+      const audio = createAudioService(manager)
 
       const player = await audio.getOrCreatePlayer(
         guildId,
@@ -142,6 +185,7 @@ class MusicExtensionClass extends Extension {
       }
 
       await audio.ensurePlayback(player)
+      logger.info('Music', `재생 시작: ${botLabel} - ${query}`)
     } catch (err) {
       const message =
         err instanceof Error ? err.message : '알 수 없는 오류가 발생했어요.'
@@ -151,7 +195,7 @@ class MusicExtensionClass extends Extension {
         } else {
           await i.reply({ content: message, flags: MessageFlags.Ephemeral })
         }
-      } catch {
+      } catch (err) {
         // ignore secondary failures
       }
     }
@@ -590,7 +634,7 @@ class MusicExtensionClass extends Extension {
           value: s.length > 100 ? s.slice(0, 100) : s,
         }))
         await interaction.respond(choices)
-      } catch {
+      } catch (err) {
         await interaction.respond([
           { name: query.slice(0, 100), value: query.slice(0, 100) },
           {

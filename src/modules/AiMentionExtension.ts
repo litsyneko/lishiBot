@@ -19,6 +19,7 @@ import { createOpencodeZenProvider } from '../features/ai/opencodeZenProvider'
 import { checkToolPermissionLayer3 } from '../features/ai/permissions/permissionCheck'
 import { handleSessionReply } from '../features/ai/sessionReply'
 import { stripThinkTags, toComponentV2 } from '../features/ai/thinkStripper'
+import { delayBeforeToolCall } from '../features/ai/tools/helpers/toolDelay'
 import { toolNameMap } from '../features/ai/tools/proposalCard'
 import { createToolRegistry } from '../features/ai/tools/toolRegistry'
 import type {
@@ -121,6 +122,7 @@ class AiMentionExtensionClass extends Extension {
         description: toolDef.declaration.description,
         parameters: toolDef.declaration.parameters,
         execute: async (args: Record<string, unknown>) => {
+          await delayBeforeToolCall()
           const result = await toolDef.execute(args, context)
           return result
         },
@@ -203,7 +205,7 @@ class AiMentionExtensionClass extends Extension {
               stageMessageId,
               formatStageMessage(stage)
             )
-          } catch {
+          } catch (err) {
             // message may have been deleted
           }
         }
@@ -244,7 +246,7 @@ class AiMentionExtensionClass extends Extension {
           if (stageMessageId !== undefined) {
             try {
               await message.channel.messages.delete(stageMessageId)
-            } catch {
+            } catch (err) {
               // already deleted
             }
           }
@@ -468,7 +470,7 @@ class AiMentionExtensionClass extends Extension {
 
       try {
         await message.channel.messages.delete(sent.id)
-      } catch {
+      } catch (err) {
         // already deleted
       }
 

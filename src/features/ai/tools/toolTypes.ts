@@ -14,6 +14,7 @@ export type ToolParameterSchema = {
   readonly type: string
   readonly description: string
   readonly enum?: readonly string[]
+  readonly items?: ToolParameterSchema
 }
 
 // ─── Gemini Function Call / Response ───

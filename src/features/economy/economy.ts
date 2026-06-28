@@ -1,9 +1,15 @@
 import { formatWon } from '../../config/korea'
+import { logger } from '../../utils/logger'
 import { getSupabase } from '../ai/supabase'
 
 export type BalanceResult = {
   readonly amount: number
   readonly label: string
+}
+
+export type BankResult = {
+  readonly balance: number
+  readonly bankBalance: number
 }
 
 export type TransferInput = {
@@ -38,6 +44,26 @@ export type DropLeaderboardEntry = {
   readonly totalAmount: number
 }
 
+export type LevelUpResult = {
+  readonly newLevel: number
+  readonly leveledUp: boolean
+  readonly reward: number
+}
+
+export type ShopItem = {
+  readonly itemId: string
+  readonly name: string
+  readonly description: string
+  readonly price: number
+  readonly category: string
+  readonly emoji: string
+}
+
+export type InventoryEntry = {
+  readonly itemId: string
+  readonly quantity: number
+}
+
 export type EconomyService = {
   readonly addBalance: (
     userId: string,
@@ -61,6 +87,18 @@ export type EconomyService = {
   readonly claimQuestReward: (userId: string) => Promise<EconomyMessage>
   readonly claimLottery: (userId: string) => Promise<LotteryResult>
   readonly recordActivity: (userId: string) => Promise<number>
+  readonly addXp: (userId: string, xp: number) => Promise<LevelUpResult>
+  readonly getLevel: (userId: string) => Promise<{ level: number; xp: number }>
+  readonly getEnabledRandomDropGuilds: () => Promise<readonly string[]>
+  readonly getScheduledDropHours: (
+    guildId: string,
+    dropDate: string
+  ) => Promise<readonly number[]>
+  readonly setScheduledDropHours: (
+    guildId: string,
+    dropDate: string,
+    hours: readonly number[]
+  ) => Promise<void>
   readonly getRandomDropSettings: (
     guildId: string
   ) => Promise<RandomDropSettings | null>
@@ -68,7 +106,20 @@ export type EconomyService = {
     guildId: string,
     settings: Partial<RandomDropSettings>
   ) => Promise<void>
+  readonly getScheduleNotifiedDate: (guildId: string) => Promise<string | null>
+  readonly setScheduleNotifiedDate: (
+    guildId: string,
+    date: string
+  ) => Promise<void>
+  readonly getRandomDropSentCount: (
+    guildId: string,
+    dropDate: string
+  ) => Promise<number>
   readonly createRandomDrop: (guildId: string) => Promise<RandomDrop | null>
+  readonly recordRandomDropSent: (
+    dropId: string,
+    guildId: string
+  ) => Promise<void>
   readonly claimRandomDrop: (
     dropId: string,
     userId: string,
@@ -83,6 +134,14 @@ export type EconomyService = {
     guildId: string,
     limit?: number
   ) => Promise<DropLeaderboardEntry[]>
+  readonly getShopItems: () => Promise<ShopItem[]>
+  readonly buyItem: (userId: string, itemId: string) => Promise<EconomyMessage>
+  readonly getInventory: (userId: string) => Promise<InventoryEntry[]>
+  readonly useItem: (userId: string, itemId: string) => Promise<EconomyMessage>
+  readonly getBankBalance: (userId: string) => Promise<number>
+  readonly bankDeposit: (userId: string, amount: number) => Promise<BankResult>
+  readonly bankWithdraw: (userId: string, amount: number) => Promise<BankResult>
+  readonly claimInterest: (userId: string) => Promise<EconomyMessage>
 }
 
 export type RandomDropSettings = {
@@ -114,11 +173,16 @@ export type RankingEntry = {
 }
 
 const attendanceReward = 5000
+const attendanceStreakBonus7 = 10000
+const attendanceStreakBonus30 = 50000
+const activityXpPerMessage = 10
+const gambleXpPerBet = 5
 const questReward = 5000
 const questGambleRequired = 3
 const questRpsRequired = 1
 const activityRewardPer = 100
 const activityMaxRewards = 5
+const dayMs = 24 * 60 * 60 * 1000
 
 export function createEconomyService(): EconomyService {
   async function getBalance(userId: string): Promise<BalanceResult> {
@@ -183,12 +247,23 @@ export function createEconomyService(): EconomyService {
       p_user_id: input.userId,
       p_today: today,
       p_reward: attendanceReward,
+      p_streak_bonus_7: attendanceStreakBonus7,
+      p_streak_bonus_30: attendanceStreakBonus30,
     })
 
     if (error !== null) throw new Error(`출석 처리 실패: ${error.message}`)
-    if (data === false) throw new Error('오늘은 이미 출석 보상을 받았어요.')
+    if (data === -1) throw new Error('오늘은 이미 출석 보상을 받았어요.')
 
-    return { message: `출석 보상 ${formatWon(attendanceReward)}을 받았어요.` }
+    const totalReward = Number(data ?? attendanceReward)
+    const bonusText =
+      totalReward > attendanceReward
+        ? ` (연속 출석 보너스 +${formatWon(
+            totalReward - attendanceReward
+          )} 포함!)`
+        : ''
+    return {
+      message: `출석 보상 ${formatWon(totalReward)}을 받았어요.${bonusText}`,
+    }
   }
 
   async function recordGamble(
@@ -208,6 +283,12 @@ export function createEconomyService(): EconomyService {
     })
 
     if (error !== null) throw new Error(`도박 기록 실패: ${error.message}`)
+    void addXp(userId, gambleXpPerBet).catch((e: unknown) =>
+      logger.debug(
+        'Economy',
+        `XP failed: ${e instanceof Error ? e.message : String(e)}`
+      )
+    )
   }
 
   async function getRanking(limit = 10): Promise<RankingEntry[]> {
@@ -344,7 +425,113 @@ export function createEconomyService(): EconomyService {
     })
 
     if (error !== null) throw new Error(`활동 기록 실패: ${error.message}`)
-    return Number(data ?? 0)
+    const activityReward = Number(data ?? 0)
+    if (activityReward > 0) {
+      void addXp(userId, activityXpPerMessage).catch((e: unknown) =>
+        logger.debug(
+          'Economy',
+          `XP failed: ${e instanceof Error ? e.message : String(e)}`
+        )
+      )
+    }
+    return activityReward
+  }
+
+  async function addXp(userId: string, xp: number): Promise<LevelUpResult> {
+    const supabase = getSupabase()
+    if (supabase === null) return { newLevel: 1, leveledUp: false, reward: 0 }
+
+    const { data, error } = await supabase.rpc('add_xp', {
+      p_user_id: userId,
+      p_xp: xp,
+    })
+
+    if (error !== null) throw new Error(`XP 추가 실패: ${error.message}`)
+
+    const row = (data as Array<Record<string, unknown>> | null)?.[0]
+    if (row === undefined) {
+      return { newLevel: 1, leveledUp: false, reward: 0 }
+    }
+
+    return {
+      newLevel: Number(row.new_level ?? 1),
+      leveledUp: Boolean(row.leveled_up),
+      reward: Number(row.reward ?? 0),
+    }
+  }
+
+  async function getLevel(
+    userId: string
+  ): Promise<{ level: number; xp: number }> {
+    const supabase = getSupabase()
+    if (supabase === null) return { level: 1, xp: 0 }
+
+    const { data, error } = await supabase
+      .from('accounts')
+      .select('level, xp')
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    if (error !== null) throw new Error(`레벨 조회 실패: ${error.message}`)
+    return {
+      level: data?.level ?? 1,
+      xp: data?.xp ?? 0,
+    }
+  }
+
+  async function getEnabledRandomDropGuilds(): Promise<readonly string[]> {
+    const supabase = getSupabase()
+    if (supabase === null) return []
+
+    const { data, error } = await supabase
+      .from('random_drops')
+      .select('guild_id')
+      .eq('enabled', true)
+
+    if (error !== null) throw new Error(`활성 길드 조회 실패: ${error.message}`)
+    if (data === null) return []
+
+    return data.map((row) => String(row.guild_id ?? ''))
+  }
+
+  async function getScheduledDropHours(
+    guildId: string,
+    dropDate: string
+  ): Promise<readonly number[]> {
+    const supabase = getSupabase()
+    if (supabase === null) return []
+
+    const { data, error } = await supabase
+      .from('random_drop_schedule')
+      .select('scheduled_hours')
+      .eq('guild_id', guildId)
+      .eq('drop_date', dropDate)
+      .maybeSingle()
+
+    if (error !== null) throw new Error(`스케줄 조회 실패: ${error.message}`)
+    if (data === null) return []
+
+    return (data.scheduled_hours as number[] | null) ?? []
+  }
+
+  async function setScheduledDropHours(
+    guildId: string,
+    dropDate: string,
+    hours: readonly number[]
+  ): Promise<void> {
+    const supabase = getSupabase()
+    if (supabase === null) return
+
+    const { error } = await supabase.from('random_drop_schedule').upsert(
+      {
+        guild_id: guildId,
+        drop_date: dropDate,
+        scheduled_hours: [...hours],
+      },
+      { onConflict: 'guild_id,drop_date' }
+    )
+
+    if (error !== null) throw new Error(`스케줄 저장 실패: ${error.message}`)
   }
 
   async function getRandomDropSettings(
@@ -399,6 +586,57 @@ export function createEconomyService(): EconomyService {
     if (error !== null) throw new Error(`선착 보상 설정 실패: ${error.message}`)
   }
 
+  async function getScheduleNotifiedDate(
+    guildId: string
+  ): Promise<string | null> {
+    const supabase = getSupabase()
+    if (supabase === null) return null
+
+    const { data, error } = await supabase
+      .from('random_drops')
+      .select('last_schedule_notified_date')
+      .eq('guild_id', guildId)
+      .maybeSingle()
+
+    if (error !== null) throw new Error(`알림 기록 조회 실패: ${error.message}`)
+    return data?.last_schedule_notified_date ?? null
+  }
+
+  async function setScheduleNotifiedDate(
+    guildId: string,
+    date: string
+  ): Promise<void> {
+    const supabase = getSupabase()
+    if (supabase === null) return
+
+    const { error } = await supabase
+      .from('random_drops')
+      .update({ last_schedule_notified_date: date })
+      .eq('guild_id', guildId)
+
+    if (error !== null) throw new Error(`알림 기록 저장 실패: ${error.message}`)
+  }
+
+  async function getRandomDropSentCount(
+    guildId: string,
+    dropDate: string
+  ): Promise<number> {
+    const supabase = getSupabase()
+    if (supabase === null) return 0
+
+    const range = koreanDayUtcRange(dropDate)
+    const { count, error } = await supabase
+      .from('random_drop_claims')
+      .select('drop_id', { count: 'exact', head: true })
+      .eq('guild_id', guildId)
+      .gte('created_at', range.startInclusive)
+      .lt('created_at', range.endExclusive)
+
+    if (error !== null)
+      throw new Error(`선착 보상 발송 기록 조회 실패: ${error.message}`)
+    return count ?? 0
+  }
+
   async function createRandomDrop(guildId: string): Promise<RandomDrop | null> {
     const supabase = getSupabase()
     if (supabase === null) return null
@@ -414,6 +652,21 @@ export function createEconomyService(): EconomyService {
       .toString(36)
       .slice(2, 8)}`
 
+    return {
+      id: dropId,
+      guildId,
+      amount,
+      remaining: settings.dropsPerDay,
+    }
+  }
+
+  async function recordRandomDropSent(
+    dropId: string,
+    guildId: string
+  ): Promise<void> {
+    const supabase = getSupabase()
+    if (supabase === null) return
+
     const { error } = await supabase.from('random_drop_claims').insert({
       drop_id: dropId,
       guild_id: guildId,
@@ -421,13 +674,6 @@ export function createEconomyService(): EconomyService {
     })
 
     if (error !== null) throw new Error(`선착 보상 생성 실패: ${error.message}`)
-
-    return {
-      id: dropId,
-      guildId,
-      amount,
-      remaining: settings.dropsPerDay,
-    }
   }
 
   async function claimRandomDrop(
@@ -501,6 +747,190 @@ export function createEconomyService(): EconomyService {
     }))
   }
 
+  async function getShopItems(): Promise<ShopItem[]> {
+    const supabase = getSupabase()
+    if (supabase === null) return []
+
+    const { data, error } = await supabase
+      .from('shop_items')
+      .select('item_id, name, description, price, category, emoji')
+
+    if (error !== null) throw new Error(`상점 조회 실패: ${error.message}`)
+    if (data === null) return []
+
+    return (data as Array<Record<string, unknown>>).map((r) => ({
+      itemId: String(r.item_id ?? ''),
+      name: String(r.name ?? ''),
+      description: String(r.description ?? ''),
+      price: Number(r.price ?? 0),
+      category: String(r.category ?? ''),
+      emoji: String(r.emoji ?? ''),
+    }))
+  }
+
+  async function buyItem(
+    userId: string,
+    itemId: string
+  ): Promise<EconomyMessage> {
+    const supabase = getSupabase()
+    if (supabase === null) throw new Error('Supabase가 설정되지 않았습니다.')
+
+    const { data, error } = await supabase.rpc('buy_shop_item', {
+      p_user_id: userId,
+      p_item_id: itemId,
+    })
+
+    if (error !== null) throw new Error(`구매 실패: ${error.message}`)
+    if (data === -1)
+      throw new Error('잔액이 부족하거나 존재하지 않는 아이템이에요.')
+
+    return {
+      message: `${formatWon(Number(data))}을(를) 지불하고 아이템을 구매했어요.`,
+    }
+  }
+
+  async function getInventory(userId: string): Promise<InventoryEntry[]> {
+    const supabase = getSupabase()
+    if (supabase === null) return []
+
+    const { data, error } = await supabase
+      .from('user_inventory')
+      .select('item_id, quantity')
+      .eq('user_id', userId)
+      .gt('quantity', 0)
+
+    if (error !== null) throw new Error(`인벤토리 조회 실패: ${error.message}`)
+    if (data === null) return []
+
+    return (data as Array<Record<string, unknown>>).map((r) => ({
+      itemId: String(r.item_id ?? ''),
+      quantity: Number(r.quantity ?? 0),
+    }))
+  }
+
+  async function useItem(
+    userId: string,
+    itemId: string
+  ): Promise<EconomyMessage> {
+    const supabase = getSupabase()
+    if (supabase === null) throw new Error('Supabase가 설정되지 않았습니다.')
+
+    const { data: invRow, error: selectError } = await supabase
+      .from('user_inventory')
+      .select('quantity')
+      .eq('user_id', userId)
+      .eq('item_id', itemId)
+      .maybeSingle()
+
+    if (selectError !== null)
+      throw new Error(`인벤토리 조회 실패: ${selectError.message}`)
+
+    const qty = Number(invRow?.quantity ?? 0)
+    if (qty <= 0) throw new Error('보유하지 않은 아이템이에요.')
+
+    const newQty = qty - 1
+    const { error: consumeError } = await supabase
+      .from('user_inventory')
+      .update({ quantity: newQty })
+      .eq('user_id', userId)
+      .eq('item_id', itemId)
+
+    if (consumeError !== null)
+      throw new Error(`아이템 사용 실패: ${consumeError.message}`)
+
+    const effect = describeItemEffect(itemId)
+    return { message: effect }
+  }
+
+  async function getBankBalance(userId: string): Promise<number> {
+    const supabase = getSupabase()
+    if (supabase === null) return 0
+
+    const { data, error } = await supabase
+      .from('accounts')
+      .select('bank_balance')
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    if (error !== null) throw new Error(`은행 잔액 조회 실패: ${error.message}`)
+    return data?.bank_balance ?? 0
+  }
+
+  async function bankDeposit(
+    userId: string,
+    amount: number
+  ): Promise<BankResult> {
+    assertPositiveAmount(amount)
+    const supabase = getSupabase()
+    if (supabase === null) throw new Error('Supabase가 설정되지 않았습니다.')
+
+    const { data, error } = await supabase.rpc('bank_deposit', {
+      p_user_id: userId,
+      p_amount: amount,
+    })
+
+    if (error !== null) throw new Error(`입금 실패: ${error.message}`)
+    if (data === false) throw new Error('잔액이 부족해요.')
+
+    return await getBalances(userId)
+  }
+
+  async function bankWithdraw(
+    userId: string,
+    amount: number
+  ): Promise<BankResult> {
+    assertPositiveAmount(amount)
+    const supabase = getSupabase()
+    if (supabase === null) throw new Error('Supabase가 설정되지 않았습니다.')
+
+    const { data, error } = await supabase.rpc('bank_withdraw', {
+      p_user_id: userId,
+      p_amount: amount,
+    })
+
+    if (error !== null) throw new Error(`출금 실패: ${error.message}`)
+    if (data === false) throw new Error('은행 잔액이 부족해요.')
+
+    return await getBalances(userId)
+  }
+
+  async function claimInterest(userId: string): Promise<EconomyMessage> {
+    const supabase = getSupabase()
+    if (supabase === null) throw new Error('Supabase가 설정되지 않았습니다.')
+
+    const today = koreanDateKey(new Date())
+    const { data, error } = await supabase.rpc('claim_interest', {
+      p_user_id: userId,
+      p_today: today,
+    })
+
+    if (error !== null) throw new Error(`이자 수령 실패: ${error.message}`)
+    if (data === -2) throw new Error('오늘은 이미 이자를 수령했어요.')
+
+    const interest = Number(data ?? 0)
+    if (interest === 0) {
+      return { message: '예금이 없어 이자를 받지 못했어요.' }
+    }
+    return { message: `은행 이자 ${formatWon(interest)}을 받았어요.` }
+  }
+
+  async function getBalances(userId: string): Promise<BankResult> {
+    const supabase = getSupabase()
+    if (supabase === null) return { balance: 0, bankBalance: 0 }
+
+    const { data, error } = await supabase
+      .from('accounts')
+      .select('balance, bank_balance')
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    if (error !== null) throw new Error(`잔액 조회 실패: ${error.message}`)
+    return {
+      balance: data?.balance ?? 0,
+      bankBalance: data?.bank_balance ?? 0,
+    }
+  }
+
   return {
     addBalance,
     claimAttendance,
@@ -513,12 +943,29 @@ export function createEconomyService(): EconomyService {
     claimQuestReward,
     claimLottery,
     recordActivity,
+    addXp,
+    getLevel,
+    getEnabledRandomDropGuilds,
+    getScheduledDropHours,
+    setScheduledDropHours,
     getRandomDropSettings,
     setRandomDropSettings,
+    getScheduleNotifiedDate,
+    setScheduleNotifiedDate,
+    getRandomDropSentCount,
     createRandomDrop,
+    recordRandomDropSent,
     claimRandomDrop,
     recordDropClaim,
     getDropLeaderboard,
+    getShopItems,
+    buyItem,
+    getInventory,
+    useItem,
+    getBankBalance,
+    bankDeposit,
+    bankWithdraw,
+    claimInterest,
   }
 }
 
@@ -535,6 +982,22 @@ function balanceResult(amount: number): BalanceResult {
   }
 }
 
+function describeItemEffect(itemId: string): string {
+  if (itemId === 'luck_boost') {
+    return '🍀 다음 도박에서 행운이 +10% 증가해요.'
+  }
+  if (itemId === 'double_xp') {
+    return '⚡ 30분간 경험치가 2배로 적립돼요.'
+  }
+  if (itemId === 'mystery_box') {
+    const prize = 5000 + Math.floor(Math.random() * 96001)
+    return `🎁 미스터리 상자에서 ${formatWon(
+      prize
+    )}을(를) 획득했어요! (실제 지급은 추후 연동 예정)`
+  }
+  return '아이템을 사용했어요.'
+}
+
 function koreanDateKey(date: Date): string {
   return new Intl.DateTimeFormat('en-CA', {
     day: '2-digit',
@@ -542,6 +1005,18 @@ function koreanDateKey(date: Date): string {
     timeZone: 'Asia/Seoul',
     year: 'numeric',
   }).format(date)
+}
+
+function koreanDayUtcRange(dropDate: string): {
+  readonly endExclusive: string
+  readonly startInclusive: string
+} {
+  const start = new Date(`${dropDate}T00:00:00+09:00`)
+  const end = new Date(start.getTime() + dayMs)
+  return {
+    endExclusive: end.toISOString(),
+    startInclusive: start.toISOString(),
+  }
 }
 
 function koreanWeekKey(date: Date): string {

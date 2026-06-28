@@ -13,7 +13,11 @@ import {
   lookupChannelTool,
   readChannelMessagesTool,
 } from './tools/channelTools'
-import { listForumPostsTool, readForumPostTool } from './tools/forumTools'
+import {
+  createForumTool,
+  listForumPostsTool,
+  readForumPostTool,
+} from './tools/forumTools'
 import {
   banMemberTool,
   kickMemberTool,
@@ -21,6 +25,10 @@ import {
   timeoutMemberTool,
   unbanMemberTool,
 } from './tools/memberActionTools'
+import {
+  addRoleMemberTool,
+  removeRoleMemberTool,
+} from './tools/memberRoleTools'
 import { lookupMemberTool } from './tools/memberTools'
 import { saveMemoryTool } from './tools/memoryTool'
 import {
@@ -37,12 +45,24 @@ import {
   skipTrackTool,
   stopMusicTool,
 } from './tools/musicTool'
+import { resetNicknameTool, setNicknameTool } from './tools/nicknameTools'
+import {
+  createRoleTool,
+  deleteRoleTool,
+  editRoleTool,
+  reorderRoleTool,
+  setRolePermissionsTool,
+} from './tools/roleManageTools'
 import { listRolesTool, lookupRoleTool } from './tools/roleTools'
 import { sendMessageTool } from './tools/sendMessageTool'
 import { sendStickerTool } from './tools/sendStickerTool'
 import { getServerInfoTool } from './tools/serverTools'
 import { getStickerTool } from './tools/stickerTools'
 import { editThreadTool, readThreadMessagesTool } from './tools/threadTools'
+import {
+  disconnectAllMembersTool,
+  moveAllMembersTool,
+} from './tools/voiceBulkTools'
 import { voiceActionTool, voiceMemberLookupTool } from './tools/voiceTools'
 import type { Client } from 'discord.js'
 
@@ -63,17 +83,29 @@ export function createToolRegistry(client: Client): ToolRegistry {
   register(readThreadMessagesTool(client))
   register(listForumPostsTool(client))
   register(readForumPostTool(client))
+  register(createForumTool(client))
   register(getServerInfoTool(client))
   register(lookupMemberTool(client))
   register(voiceMemberLookupTool(client))
   register(voiceActionTool(client))
+  register(moveAllMembersTool(client))
+  register(disconnectAllMembersTool(client))
   register(timeoutMemberTool(client))
   register(removeTimeoutMemberTool(client))
   register(banMemberTool(client))
   register(unbanMemberTool(client))
   register(kickMemberTool(client))
+  register(addRoleMemberTool(client))
+  register(removeRoleMemberTool(client))
+  register(setNicknameTool(client))
+  register(resetNicknameTool(client))
   register(listRolesTool(client))
   register(lookupRoleTool(client))
+  register(createRoleTool(client))
+  register(deleteRoleTool(client))
+  register(editRoleTool(client))
+  register(setRolePermissionsTool(client))
+  register(reorderRoleTool(client))
   register(listCategoryChannelsTool(client))
   register(reorderCategoryChannelsTool(client))
   register(createCategoryTool(client))

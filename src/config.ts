@@ -17,6 +17,13 @@ type SupabaseConfig = {
   secretKey: string
 }
 
+type MusicBotConfig = {
+  readonly id: string
+  readonly label: string
+  readonly token: string
+  readonly clientId: string
+}
+
 type Config = {
   token: string
   guilds: string[]
@@ -24,6 +31,7 @@ type Config = {
   lavalink: LavalinkConfig
   ai: AiConfig
   supabase?: SupabaseConfig
+  musicBots?: readonly MusicBotConfig[]
 }
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires

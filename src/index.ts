@@ -1,4 +1,5 @@
 import { config } from './config'
+import { startSubBotClients } from './music/playbackBotRegistry'
 import { CustomizedCommandClient } from './structures'
 import { logger } from './utils/logger'
 import { Client, GatewayIntentBits } from 'discord.js'
@@ -14,12 +15,21 @@ const client = new Client({
 
 const cts = new CustomizedCommandClient(client)
 
+const subBotStopper: (() => Promise<void>)[] = []
+
 const start = async () => {
   await cts.setup()
 
   await client.login(config.token)
 
   await cts.getApplicationCommandsExtension()?.sync()
+
+  if ((config.musicBots ?? []).length > 0) {
+    const subBots = await startSubBotClients()
+    for (const sub of subBots) {
+      subBotStopper.push(sub.stop)
+    }
+  }
 }
 
 start().catch((err) => {
@@ -32,6 +42,14 @@ start().catch((err) => {
 
 function shutdown(signal: string): void {
   logger.info('Boot', `${signal} 수신, 종료하는 중...`)
+  for (const stop of subBotStopper) {
+    void stop().catch((e: unknown) =>
+      logger.debug(
+        'Boot',
+        `서브 봇 종료 실패: ${e instanceof Error ? e.message : String(e)}`
+      )
+    )
+  }
   client.destroy()
   process.exit(0)
 }

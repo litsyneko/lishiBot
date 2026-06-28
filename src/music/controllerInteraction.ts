@@ -443,7 +443,7 @@ export function registerControllerInteractionHandler(
             })
           }
         }
-      } catch {
+      } catch (err) {
         // ignore secondary errors
       }
     }

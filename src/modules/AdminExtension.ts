@@ -1,3 +1,8 @@
+import {
+  disableBoostCelebration,
+  enableBoostCelebration,
+  isBoostCelebrationEnabled,
+} from '../features/boost/boostCelebrationStore'
 import { createEconomyService } from '../features/economy/economy'
 import {
   disableSoundboardGuard,
@@ -40,6 +45,43 @@ class AdminExtensionClass extends Extension {
         i,
         '🔊 사운드보드 스팸 방지를 **활성화**했어요.\n10초 내 15회 초과 사용 시 30초 음소거됩니다.'
       )
+    }
+  }
+
+  @adminGroup.command({
+    name: '부스트축하',
+    description:
+      '서버 부스트 축하 메시지 자동 전송을 켜거나 끕니다. (시스템 채널로 전송)',
+  })
+  async toggleBoostCelebration(
+    i: ChatInputCommandInteraction,
+    @option({
+      type: ApplicationCommandOptionType.Boolean,
+      name: '활성화',
+      description: 'true면 켜기, false면 끄기',
+      required: true,
+    })
+    enabled: boolean
+  ) {
+    requireServerManager(i)
+
+    const guild = i.guild
+    if (guild === null) {
+      return
+    }
+
+    if (enabled) {
+      await enableBoostCelebration(guild.id)
+      const channelLabel = guild.systemChannelId
+        ? `<#${guild.systemChannelId}>`
+        : '미설정 (시스템 채널 필요)'
+      await replyPublic(
+        i,
+        `💜 서버 부스트 축하 메시지를 **활성화**했어요.\n전송 채널: ${channelLabel}\n멤버가 서버를 부스트하면 자동으로 축하 임베드가 전송돼요.`
+      )
+    } else {
+      await disableBoostCelebration(guild.id)
+      await replyPublic(i, '💜 서버 부스트 축하 메시지를 **해제**했어요.')
     }
   }
 

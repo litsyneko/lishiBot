@@ -57,7 +57,7 @@ export function createPlayerControllerManager(
     if (channel === undefined || !('messages' in channel)) return
     try {
       await (channel as GuildTextBasedChannel).messages.delete(messageId)
-    } catch {
+    } catch (err) {
       // already deleted
     }
   }
@@ -100,7 +100,7 @@ export function createPlayerControllerManager(
 
       player.controllerMessageId = msg.id
       player.controllerChannelId = channel.id
-    } catch {
+    } catch (err) {
       // channel might be unwritable
     }
   }

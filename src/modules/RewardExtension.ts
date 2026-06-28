@@ -1,5 +1,6 @@
 import { formatWon } from '../config/korea'
 import { createEconomyService } from '../features/economy/economy'
+import type { RandomDropSettings } from '../features/economy/economy'
 import { logger } from '../utils/logger'
 import { Extension, listener } from '@pikokr/command.ts'
 import type { Message, TextChannel } from 'discord.js'
@@ -84,6 +85,16 @@ function tierAccentColor(tier: DropTier): number {
   if (tier === 'jackpot') return 0xffd700
   if (tier === 'misery') return 0x95a5a6
   return 0x3498db
+}
+
+function formatHourLabel(hour: number): string {
+  return `${String(hour).padStart(2, '0')}:00`
+}
+
+function buildScheduleSummary(scheduledHours: Set<number>): string {
+  const sorted = Array.from(scheduledHours).sort((a, b) => a - b)
+  const labels = sorted.map(formatHourLabel)
+  return `오늘 선착보상 예정 시간\n${labels.join(' · ')}`
 }
 
 function pickDropHours(
@@ -177,9 +188,6 @@ function koreanDateKey(): string {
 }
 
 class RewardExtensionClass extends Extension {
-  private dropsToday = new Map<string, number>()
-  private lastDropDate = ''
-  private scheduledDropHours = new Map<string, Set<number>>()
   private intervalHandles: ReturnType<typeof setInterval>[] = []
   private intervalsRegistered = false
 
@@ -206,6 +214,22 @@ class RewardExtensionClass extends Extension {
   async ready() {
     if (this.intervalsRegistered) return
     this.intervalsRegistered = true
+
+    try {
+      const guilds = await economy.getEnabledRandomDropGuilds()
+      for (const guildId of guilds) {
+        ACTIVE_GUILDS.add(guildId)
+      }
+      logger.info('Reward', `활성 선착보상 길드 ${guilds.length}개 로드`)
+    } catch (err) {
+      logger.error(
+        'Reward',
+        `활성 길드 로드 실패: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      )
+    }
+
     this.intervalHandles.push(
       setInterval(() => {
         void this.checkRandomDrops()
@@ -284,6 +308,14 @@ class RewardExtensionClass extends Extension {
     try {
       await economy.addBalance(interaction.user.id, amount)
       await economy.recordDropClaim(interaction.user.id, drop.guildId, amount)
+      const claimOrder = await economy.claimRandomDrop(
+        drop.dropId,
+        interaction.user.id,
+        drop.maxClaims
+      )
+      if (claimOrder === null) {
+        logger.warn('Reward', `수령자 기록 실패: ${drop.dropId}`)
+      }
     } catch (err) {
       drop.claimedBy = drop.claimedBy.filter((id) => id !== interaction.user.id)
       drop.amounts.delete(interaction.user.id)
@@ -352,43 +384,80 @@ class RewardExtensionClass extends Extension {
     }
   }
 
+  private async sendAdminNotification(
+    guildId: string,
+    settings: RandomDropSettings,
+    content: string
+  ): Promise<void> {
+    if (settings.adminChannelId === null) return
+
+    const guild = this.client.guilds.cache.get(guildId)
+    if (guild === undefined) return
+
+    const channel = guild.channels.cache.get(settings.adminChannelId)
+    if (channel === undefined || !channel.isTextBased()) return
+
+    const textChannel = channel as TextChannel
+    const container = new ContainerBuilder().setAccentColor(0x3498db)
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(content)
+    )
+
+    await textChannel.send({
+      components: [container],
+      flags: MessageFlags.IsComponentsV2,
+    })
+  }
+
   private async checkRandomDrops(): Promise<void> {
     const today = koreanDateKey()
-    if (today !== this.lastDropDate) {
-      this.lastDropDate = today
-      this.dropsToday.clear()
-      this.scheduledDropHours.clear()
-    }
-
     const hour = koreanHour()
 
     for (const guildId of ACTIVE_GUILDS) {
       const settings = await economy.getRandomDropSettings(guildId)
       if (settings === null || !settings.enabled) continue
-      if (hour < settings.startHour || hour >= settings.endHour) continue
 
-      const scheduled = this.scheduledDropHours.get(guildId)
-      if (scheduled === undefined) {
-        this.scheduledDropHours.set(
-          guildId,
+      let scheduled = await economy.getScheduledDropHours(guildId, today)
+
+      if (scheduled.length === 0) {
+        scheduled = Array.from(
           pickDropHours(
             settings.startHour,
             settings.endHour,
             settings.dropsPerDay
           )
-        )
-        continue
+        ).sort((a, b) => a - b)
+
+        try {
+          await economy.setScheduledDropHours(guildId, today, scheduled)
+
+          const lastNotified = await economy.getScheduleNotifiedDate(guildId)
+          if (lastNotified !== today) {
+            await this.sendAdminNotification(
+              guildId,
+              settings,
+              buildScheduleSummary(new Set(scheduled))
+            )
+            await economy.setScheduleNotifiedDate(guildId, today)
+          }
+        } catch (err) {
+          logger.warn(
+            'Reward',
+            `스케줄 저장/알림 실패: ${
+              err instanceof Error ? err.message : String(err)
+            }`
+          )
+        }
       }
 
-      if (!scheduled.has(hour)) continue
+      if (hour < settings.startHour || hour >= settings.endHour) continue
+      if (!scheduled.includes(hour)) continue
 
-      const dropsCount = this.dropsToday.get(guildId) ?? 0
+      const dropsCount = await economy.getRandomDropSentCount(guildId, today)
       if (dropsCount >= settings.dropsPerDay) continue
 
       const drop = await economy.createRandomDrop(guildId)
       if (drop === null) continue
-
-      this.dropsToday.set(guildId, dropsCount + 1)
 
       try {
         const guild = this.client.guilds.cache.get(guildId)
@@ -432,6 +501,29 @@ class RewardExtensionClass extends Extension {
         activeDrop.messageId = msg.id
         activeDrops.set(drop.id, activeDrop)
 
+        const remainingHours = scheduled.filter((h) => h !== hour)
+        try {
+          await economy.setScheduledDropHours(guildId, today, remainingHours)
+        } catch (err) {
+          logger.error(
+            'Reward',
+            `스케줄 업데이트 실패: ${
+              err instanceof Error ? err.message : String(err)
+            }`
+          )
+        }
+
+        try {
+          await economy.recordRandomDropSent(drop.id, guildId)
+        } catch (err) {
+          logger.error(
+            'Reward',
+            `선착 보상 기록 실패: ${
+              err instanceof Error ? err.message : String(err)
+            }`
+          )
+        }
+
         logger.info(
           'Reward',
           `선착 보상 발송: ${guild.name} - ${formatWon(drop.amount)}`
@@ -468,8 +560,11 @@ class RewardExtensionClass extends Extension {
 
         const dropsLeft =
           (await economy.getRandomDropSettings(drop.guildId))?.dropsPerDay ?? 4
-        const remainingToday =
-          dropsLeft - (this.dropsToday.get(drop.guildId) ?? 0)
+        const sentToday = await economy.getRandomDropSentCount(
+          drop.guildId,
+          koreanDateKey()
+        )
+        const remainingToday = dropsLeft - sentToday
         const allUsedToday = remainingToday <= 0
 
         const container = buildExpiredDropContainer(

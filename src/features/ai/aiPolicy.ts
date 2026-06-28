@@ -31,6 +31,10 @@ export type ToolDefinitionInput = {
         readonly type: string
         readonly description: string
         readonly enum?: readonly string[]
+        readonly items?: {
+          readonly type: string
+          readonly description?: string
+        }
       }
     >
     readonly required: readonly string[]

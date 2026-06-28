@@ -1,3 +1,8 @@
+import {
+  permissionListForDescription,
+  resolvePermissionOverwrites,
+  toCreateOverwrites,
+} from '../helpers/permissionOverwrites'
 import { resolveGuild } from '../helpers/resolveGuild'
 import type {
   ToolDefinition,
@@ -248,13 +253,18 @@ export function createCategoryTool(client: Client): ToolDefinition {
     declaration: {
       name: 'create_category',
       description:
-        '서버에 새로운 카테고리 채널을 생성합니다. 생성할 카테고리의 이름을 지정해 주세요.',
+        '서버에 새로운 카테고리 채널을 생성합니다. 카테고리 이름과 역할/멤버별 권한을 지정할 수 있어요.',
       parameters: {
         type: 'object',
         properties: {
           name: {
             type: 'string',
             description: '생성할 카테고리 이름',
+          },
+          permission_overwrites: {
+            type: 'array',
+            description: `권한 오버라이드 목록 (선택). 각 항목: { id: 역할/멤버 ID, type: 'role'|'member' (기본 role), allow?: [권한...], deny?: [권한...] }. 가능한 권한: ${permissionListForDescription()}`,
+            items: { type: 'object', description: '권한 오버라이드 항목' },
           },
         },
         required: ['name'],
@@ -275,10 +285,17 @@ export function createCategoryTool(client: Client): ToolDefinition {
           return { success: false, message: '카테고리 이름이 필요해요.' }
         }
 
+        const { overwrites, error: overwriteError } =
+          resolvePermissionOverwrites(args.permission_overwrites)
+        if (overwriteError !== undefined) {
+          return { success: false, message: overwriteError }
+        }
+
         const guild = await resolveGuild(client, context)
         const created = await guild.channels.create({
           name: name.trim(),
           type: ChannelType.GuildCategory,
+          permissionOverwrites: toCreateOverwrites(overwrites),
         })
 
         return {

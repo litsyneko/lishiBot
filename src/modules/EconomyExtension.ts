@@ -210,6 +210,112 @@ class EconomyExtensionClass extends Extension {
       )
     }
   }
+
+  @economyGroup.command({
+    name: '레벨',
+    description: '내 레벨과 경험치를 확인합니다.',
+  })
+  async level(i: ChatInputCommandInteraction) {
+    try {
+      const result = await economy.getLevel(i.user.id)
+      const xpNeeded = result.level * 500
+      const progress = Math.floor((result.xp / xpNeeded) * 100)
+      const bar = `${'🟩'.repeat(Math.floor(progress / 10))}${'⬛'.repeat(
+        10 - Math.floor(progress / 10)
+      )}`
+
+      await replyPublic(
+        i,
+        `📊 **<@${i.user.id}> 레벨 정보**\n\n레벨: **${result.level}**\nXP: ${result.xp} / ${xpNeeded} (${progress}%)\n${bar}`
+      )
+    } catch (err) {
+      await replyEphemeral(
+        i,
+        err instanceof Error ? err.message : '레벨 조회 중 오류가 발생했어요.'
+      )
+    }
+  }
+
+  @economyGroup.command({
+    name: '은행',
+    description: '은행 잔액을 확인하고 입금/출금/이자 수령을 합니다.',
+  })
+  async bank(
+    i: ChatInputCommandInteraction,
+    @option({
+      type: ApplicationCommandOptionType.String,
+      name: '기능',
+      description: '조회 / 입금 / 출금 / 이자',
+      choices: [
+        { name: '조회', value: '조회' },
+        { name: '입금', value: '입금' },
+        { name: '출금', value: '출금' },
+        { name: '이자', value: '이자' },
+      ],
+      required: true,
+    })
+    action: string,
+    @option({
+      type: ApplicationCommandOptionType.Integer,
+      name: '금액',
+      description: '입금/출금 금액',
+      min_value: 1,
+      required: false,
+    })
+    amount: number
+  ) {
+    try {
+      if (action === '조회') {
+        const bankBalance = await economy.getBankBalance(i.user.id)
+        const balance = await economy.getBalance(i.user.id)
+        await replyPublic(
+          i,
+          `🏦 **은행 잔액**\n\n지갑: ${formatWon(
+            balance.amount
+          )}\n은행: ${formatWon(bankBalance)}\n이자율: 일 5%`
+        )
+        return
+      }
+
+      if (action === '이자') {
+        const result = await economy.claimInterest(i.user.id)
+        await replyPublic(i, `🏦 ${result.message}`)
+        return
+      }
+
+      if (amount === undefined) {
+        await replyEphemeral(i, '금액을 입력해 주세요.')
+        return
+      }
+
+      if (action === '입금') {
+        const result = await economy.bankDeposit(i.user.id, amount)
+        await replyPublic(
+          i,
+          `🏦 ${formatWon(amount)}을 입금했어요.\n지갑: ${formatWon(
+            result.balance
+          )} | 은행: ${formatWon(result.bankBalance)}`
+        )
+        return
+      }
+
+      if (action === '출금') {
+        const result = await economy.bankWithdraw(i.user.id, amount)
+        await replyPublic(
+          i,
+          `🏦 ${formatWon(amount)}을 출금했어요.\n지갑: ${formatWon(
+            result.balance
+          )} | 은행: ${formatWon(result.bankBalance)}`
+        )
+        return
+      }
+    } catch (err) {
+      await replyEphemeral(
+        i,
+        err instanceof Error ? err.message : '은행 처리 중 오류가 발생했어요.'
+      )
+    }
+  }
 }
 
 export const setup = async () => {

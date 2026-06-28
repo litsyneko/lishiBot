@@ -13,18 +13,27 @@ export type MusicSettings = {
 
 export type MusicSettingsService = {
   readonly ensureTableSchema: () => Promise<void>
-  readonly getSettings: (guildId: string) => Promise<MusicSettings>
+  readonly getSettings: (
+    guildId: string,
+    botId?: string
+  ) => Promise<MusicSettings>
   readonly patchSettings: (
     guildId: string,
-    patch: Partial<MusicSettings>
+    patch: Partial<MusicSettings>,
+    botId?: string
   ) => Promise<void>
-  readonly getDjChannelId: (guildId: string) => Promise<string | null>
+  readonly getDjChannelId: (
+    guildId: string,
+    botId?: string
+  ) => Promise<string | null>
   readonly setDjChannelId: (
     guildId: string,
-    channelId: string | null
+    channelId: string | null,
+    botId?: string
   ) => Promise<void>
 }
 
+const DEFAULT_BOT_ID = 'main'
 const DEFAULT_SETTINGS: MusicSettings = {
   djChannelId: null,
   volume: null,
@@ -64,7 +73,10 @@ export function createMusicSettingsService(): MusicSettingsService {
     }
   }
 
-  async function getSettings(guildId: string): Promise<MusicSettings> {
+  async function getSettings(
+    guildId: string,
+    botId: string = DEFAULT_BOT_ID
+  ): Promise<MusicSettings> {
     const supabase = getSupabase()
     if (supabase === null) return DEFAULT_SETTINGS
 
@@ -74,6 +86,7 @@ export function createMusicSettingsService(): MusicSettingsService {
         'dj_channel_id, volume, repeat_mode, controller_tab, queue_visible'
       )
       .eq('guild_id', guildId)
+      .eq('bot_id', botId)
       .maybeSingle()
 
     if (data === null || data === undefined) {
@@ -94,12 +107,16 @@ export function createMusicSettingsService(): MusicSettingsService {
 
   async function patchSettings(
     guildId: string,
-    patch: Partial<MusicSettings>
+    patch: Partial<MusicSettings>,
+    botId: string = DEFAULT_BOT_ID
   ): Promise<void> {
     const supabase = getSupabase()
     if (supabase === null) return
 
-    const row: Record<string, unknown> = { guild_id: guildId }
+    const row: Record<string, unknown> = {
+      guild_id: guildId,
+      bot_id: botId,
+    }
     if ('djChannelId' in patch) row.dj_channel_id = patch.djChannelId
     if ('volume' in patch) row.volume = patch.volume
     if ('repeatMode' in patch) row.repeat_mode = patch.repeatMode
@@ -108,21 +125,25 @@ export function createMusicSettingsService(): MusicSettingsService {
 
     const { error } = await supabase
       .from('music_settings')
-      .upsert(row, { onConflict: 'guild_id' })
+      .upsert(row, { onConflict: 'guild_id,bot_id' })
 
     if (error !== null) throw new Error(`음악 설정 저장 실패: ${error.message}`)
   }
 
-  async function getDjChannelId(guildId: string): Promise<string | null> {
-    const settings = await getSettings(guildId)
+  async function getDjChannelId(
+    guildId: string,
+    botId: string = DEFAULT_BOT_ID
+  ): Promise<string | null> {
+    const settings = await getSettings(guildId, botId)
     return settings.djChannelId
   }
 
   async function setDjChannelId(
     guildId: string,
-    channelId: string | null
+    channelId: string | null,
+    botId: string = DEFAULT_BOT_ID
   ): Promise<void> {
-    await patchSettings(guildId, { djChannelId: channelId })
+    await patchSettings(guildId, { djChannelId: channelId }, botId)
   }
 
   return {

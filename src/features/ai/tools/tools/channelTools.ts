@@ -1,3 +1,8 @@
+import {
+  permissionListForDescription,
+  resolvePermissionOverwrites,
+  toCreateOverwrites,
+} from '../helpers/permissionOverwrites'
 import { resolveGuild } from '../helpers/resolveGuild'
 import type {
   ToolDefinition,
@@ -34,7 +39,7 @@ export function createChannelTool(client: Client): ToolDefinition {
     declaration: {
       name: 'create_channel',
       description:
-        '서버에 새로운 채널을 생성합니다. 텍스트 또는 음성 채널을 만들 수 있어요.',
+        '서버에 새로운 채널을 생성합니다. 텍스트, 음성, 포럼 채널을 만들 수 있고 역할/멤버별 권한을 지정할 수 있어요.',
       parameters: {
         type: 'object',
         properties: {
@@ -45,11 +50,24 @@ export function createChannelTool(client: Client): ToolDefinition {
           type: {
             type: 'string',
             description: '생성할 채널의 유형 (기본값: text)',
-            enum: ['text', 'voice'],
+            enum: ['text', 'voice', 'forum'],
           },
           topic: {
             type: 'string',
             description: '채널의 주제/설명 (선택 사항)',
+          },
+          category_id: {
+            type: 'string',
+            description: '상위 카테고리 ID (선택)',
+          },
+          nsfw: {
+            type: 'boolean',
+            description: 'NSFW 여부 (선택, 기본값 false)',
+          },
+          permission_overwrites: {
+            type: 'array',
+            description: `권한 오버라이드 목록 (선택). 각 항목: { id: 역할/멤버 ID, type: 'role'|'member' (기본 role), allow?: [권한...], deny?: [권한...] }. 가능한 권한: ${permissionListForDescription()}`,
+            items: { type: 'object', description: '권한 오버라이드 항목' },
           },
         },
         required: ['name'],
@@ -66,22 +84,39 @@ export function createChannelTool(client: Client): ToolDefinition {
     ): Promise<ToolResult> {
       try {
         const name = args.name as string
-        const type = (args.type as 'text' | 'voice' | undefined) ?? 'text'
+        const type =
+          (args.type as 'text' | 'voice' | 'forum' | undefined) ?? 'text'
         const topic = args.topic as string | undefined
+        const categoryId =
+          (args.category_id as string | undefined)?.trim() || undefined
+        const nsfw = args.nsfw as boolean | undefined
 
         if (!name || typeof name !== 'string' || name.trim().length === 0) {
           return { success: false, message: '채널 이름이 필요해요.' }
         }
 
+        const { overwrites, error: overwriteError } =
+          resolvePermissionOverwrites(args.permission_overwrites)
+        if (overwriteError !== undefined) {
+          return { success: false, message: overwriteError }
+        }
+
         const guild = await resolveGuild(client, context)
 
         const channelType =
-          type === 'voice' ? ChannelType.GuildVoice : ChannelType.GuildText
+          type === 'voice'
+            ? ChannelType.GuildVoice
+            : type === 'forum'
+            ? ChannelType.GuildForum
+            : ChannelType.GuildText
 
         const created = await guild.channels.create({
           name: name.trim(),
           type: channelType,
           topic: topic?.trim() || undefined,
+          parent: categoryId,
+          nsfw: type === 'text' ? nsfw : undefined,
+          permissionOverwrites: toCreateOverwrites(overwrites),
         })
 
         return {
@@ -91,6 +126,7 @@ export function createChannelTool(client: Client): ToolDefinition {
             id: created.id,
             name: created.name,
             type: created.type,
+            parentId: created.parentId,
           },
         }
       } catch (error) {

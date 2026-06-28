@@ -26,6 +26,8 @@ export type RockPaperScissorsRound = {
 }
 
 const moves = ['가위', '바위', '보'] as const
+const rollDiceHouseEdgeBase = 99
+const rollDiceMaxMultiplier = 10
 
 export function flipCoin(random: RandomSource): '앞면' | '뒷면' {
   return random() < 0.5 ? '앞면' : '뒷면'
@@ -117,8 +119,12 @@ export function playRollDice(input: RollDiceInput): RollDiceResult {
     throw new Error('베팅 금액은 1원 이상이어야 해요.')
   }
 
-  const winChance = (100 - target) / 100
-  const multiplier = Math.floor((99 / winChance) * 100) / 100
+  const winningOutcomes = 101 - target
+  const rawMultiplier = rollDiceHouseEdgeBase / winningOutcomes
+  const multiplier = Math.min(
+    Math.floor(rawMultiplier * 100) / 100,
+    rollDiceMaxMultiplier
+  )
   const roll = Math.floor(random() * 100) + 1
   const win = roll >= target
   const payout = win ? Math.floor(bet * multiplier) : 0
@@ -329,4 +335,198 @@ function rouletteColor(number: number): string {
     1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36,
   ]
   return redNumbers.includes(number) ? '빨강' : '검정'
+}
+
+export type CardSuit = '♠' | '♥' | '♦' | '♣'
+
+export type CardRank =
+  | 'A'
+  | '2'
+  | '3'
+  | '4'
+  | '5'
+  | '6'
+  | '7'
+  | '8'
+  | '9'
+  | '10'
+  | 'J'
+  | 'Q'
+  | 'K'
+
+export type Card = {
+  readonly rank: CardRank
+  readonly suit: CardSuit
+  readonly value: number
+}
+
+export type BlackjackHand = {
+  readonly cards: readonly Card[]
+  readonly total: number
+  readonly soft: boolean
+  readonly isBust: boolean
+  readonly isBlackjack: boolean
+}
+
+export type BlackjackAction = 'hit' | 'stand'
+
+export type BlackjackOutcome =
+  | 'player-blackjack'
+  | 'player-win'
+  | 'push'
+  | 'dealer-win'
+  | 'player-bust'
+
+export type BlackjackResult = {
+  readonly outcome: BlackjackOutcome
+  readonly playerHand: BlackjackHand
+  readonly dealerHand: BlackjackHand
+  readonly multiplier: number
+  readonly payout: number
+  readonly win: boolean
+}
+
+const cardRanks: readonly CardRank[] = [
+  'A',
+  '2',
+  '3',
+  '4',
+  '5',
+  '6',
+  '7',
+  '8',
+  '9',
+  '10',
+  'J',
+  'Q',
+  'K',
+]
+const cardSuits: readonly CardSuit[] = ['♠', '♥', '♦', '♣']
+
+export function cardValue(rank: CardRank): number {
+  if (rank === 'A') return 11
+  if (rank === 'J' || rank === 'Q' || rank === 'K') return 10
+  return Number(rank)
+}
+
+export function createDeck(): Card[] {
+  const deck: Card[] = []
+  for (const suit of cardSuits) {
+    for (const rank of cardRanks) {
+      deck.push({ rank, suit, value: cardValue(rank) })
+    }
+  }
+  return deck
+}
+
+export function shuffleDeck(
+  deck: readonly Card[],
+  random: RandomSource
+): Card[] {
+  const next = [...deck]
+  for (let i = next.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1))
+    const tmp = next[i]
+    next[i] = next[j]
+    next[j] = tmp
+  }
+  return next
+}
+
+export function dealCard(deck: readonly Card[]): {
+  readonly card: Card
+  readonly remaining: Card[]
+} {
+  if (deck.length === 0) {
+    throw new Error('덱이 비었어요.')
+  }
+  const [card, ...remaining] = deck
+  return { card, remaining }
+}
+
+export function calculateHand(cards: readonly Card[]): BlackjackHand {
+  let total = 0
+  let aces = 0
+  for (const card of cards) {
+    total += card.value
+    if (card.rank === 'A') aces++
+  }
+  let soft = false
+  while (total > 21 && aces > 0) {
+    total -= 10
+    aces--
+  }
+  if (aces > 0 && total <= 21) {
+    soft = true
+  }
+  return {
+    cards,
+    total,
+    soft,
+    isBust: total > 21,
+    isBlackjack: cards.length === 2 && total === 21,
+  }
+}
+
+export function playDealer(
+  deck: readonly Card[],
+  dealerHand: BlackjackHand
+): { readonly hand: BlackjackHand; readonly remaining: Card[] } {
+  let remaining = [...deck]
+  let cards = [...dealerHand.cards]
+  let hand = calculateHand(cards)
+  while (hand.total < 17 || (hand.total === 17 && hand.soft)) {
+    const dealt = dealCard(remaining)
+    cards = [...cards, dealt.card]
+    remaining = dealt.remaining
+    hand = calculateHand(cards)
+  }
+  return { hand, remaining }
+}
+
+export function determineBlackjackOutcome(
+  playerHand: BlackjackHand,
+  dealerHand: BlackjackHand
+): BlackjackOutcome {
+  if (playerHand.isBust) return 'player-bust'
+  if (dealerHand.isBust) return 'player-win'
+  if (playerHand.isBlackjack && !dealerHand.isBlackjack) {
+    return 'player-blackjack'
+  }
+  if (dealerHand.isBlackjack && !playerHand.isBlackjack) {
+    return 'dealer-win'
+  }
+  if (playerHand.total > dealerHand.total) return 'player-win'
+  if (playerHand.total < dealerHand.total) return 'dealer-win'
+  return 'push'
+}
+
+export function blackjackPayout(
+  outcome: BlackjackOutcome,
+  bet: number
+): {
+  readonly multiplier: number
+  readonly payout: number
+  readonly win: boolean
+} {
+  if (!Number.isInteger(bet) || bet <= 0) {
+    throw new Error('베팅 금액은 1원 이상이어야 해요.')
+  }
+  if (outcome === 'player-blackjack') {
+    const payout = Math.floor(bet * 2.5)
+    return { multiplier: 2.5, payout, win: true }
+  }
+  if (outcome === 'player-win') {
+    const payout = bet * 2
+    return { multiplier: 2, payout, win: true }
+  }
+  return { multiplier: 0, payout: 0, win: false }
+}
+
+export function formatCard(card: Card): string {
+  return `${card.suit}${card.rank}`
+}
+
+export function formatHand(cards: readonly Card[]): string {
+  return cards.map(formatCard).join(' / ')
 }
