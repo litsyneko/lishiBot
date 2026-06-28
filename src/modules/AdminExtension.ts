@@ -1,7 +1,6 @@
 import {
   disableBoostCelebration,
   enableBoostCelebration,
-  isBoostCelebrationEnabled,
 } from '../features/boost/boostCelebrationStore'
 import { createEconomyService } from '../features/economy/economy'
 import {
