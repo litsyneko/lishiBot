@@ -2,7 +2,6 @@ import { config } from '../config'
 import { registerControllerInteractionHandler } from '../music/controllerInteraction'
 import type { CustomPlayer } from '../music/customPlayer'
 import { createLavalinkManager } from '../music/lavalinkManager'
-import { registerMainPlaybackBot } from '../music/playbackBotRegistry'
 import { createPlayerControllerManager } from '../music/playerController'
 import { getVolume } from '../music/volumeStore'
 import { logger } from '../utils/logger'
@@ -271,7 +270,6 @@ class LavalinkExtensionClass extends Extension {
       )
       registerControllerInteractionHandler(this.client, manager)
       setMusicManager(manager)
-      registerMainPlaybackBot(this.client, manager)
       logger.info('Lavalink', `Lavalink 매니저 초기화 완료 (client=${user.id})`)
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err)

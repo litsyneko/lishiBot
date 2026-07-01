@@ -497,10 +497,6 @@ class RewardExtensionClass extends Extension {
           settings.dropsPerDay
         )
         const msg = await targetChannel.send({
-          content:
-            activeDrop.mentionRoleId !== null
-              ? `<@&${activeDrop.mentionRoleId}>`
-              : undefined,
           components: [container],
           flags: MessageFlags.IsComponentsV2,
           allowedMentions:
@@ -612,6 +608,14 @@ function buildActiveDropContainer(
   const claimersText = buildClaimersText(drop, '아직 수령자가 없어요!')
 
   const container = new ContainerBuilder().setAccentColor(0xffd700)
+
+  if (drop.mentionRoleId !== null) {
+    container
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(`<@&${drop.mentionRoleId}>`)
+      )
+      .addSeparatorComponents(buildSmallDivider())
+  }
 
   container
     .addTextDisplayComponents(

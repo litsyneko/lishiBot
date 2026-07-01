@@ -68,6 +68,10 @@ pnpm lint     # eslint src --ignore-path .gitignore
   - `formatWon`, `formatKoreanDateTime` 헬퍼
 - 사용자 응답, 메시지, dry-run 텍스트는 한국어 우선.
 
+## Discord 운영 메모
+
+- 사용자가 패치노트 게시를 요청하면 `#📋║패치노트` 채널에 올린다. 임베드가 가능하면 임베드를 우선하고, 상황에 따라 일반 메시지로 정리해도 된다.
+
 ## 코드 스타일
 
 - TypeScript: target ES2022, module commonjs, strict true.
