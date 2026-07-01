@@ -5,6 +5,7 @@ export const SERVER_LOG_CATEGORIES = [
   'channels',
   'roles',
   'members',
+  'voice',
   'moderation',
   'messages',
   'invites',
@@ -36,7 +37,12 @@ export const SERVER_LOG_CATEGORY_DEFINITIONS: readonly ServerLogCategoryDefiniti
     {
       id: 'members',
       label: '멤버 관리',
-      description: '닉네임, 역할, 음성 이동/연결 해제, 봇 추가',
+      description: '참가, 퇴장, 닉네임, 역할, 봇 추가',
+    },
+    {
+      id: 'voice',
+      label: '음성 활동',
+      description: '음성 채널 참가, 퇴장, 이동, 음소거 변경',
     },
     {
       id: 'moderation',
@@ -46,14 +52,14 @@ export const SERVER_LOG_CATEGORY_DEFINITIONS: readonly ServerLogCategoryDefiniti
     {
       id: 'messages',
       label: '메시지 관리',
-      description: '메시지 삭제, 일괄 삭제, 고정/고정 해제',
+      description: '메시지 수정, 삭제, 일괄 삭제, 고정/고정 해제',
     },
     { id: 'invites', label: '초대', description: '초대 생성/수정/삭제' },
     { id: 'webhooks', label: '웹훅', description: '웹훅 생성/수정/삭제' },
     {
       id: 'expressions',
       label: '표현 요소',
-      description: '이모지, 스티커, 사운드보드 생성/수정/삭제',
+      description: '이모지 반응 추가/삭제, 스티커, 사운드보드 생성/수정/삭제',
     },
   ]
 

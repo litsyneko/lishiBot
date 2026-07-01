@@ -112,6 +112,40 @@ export function buildCancelledServerLogPanel(): ServerLogPanelMessage {
   }
 }
 
+export function buildSavedServerLogPanel(
+  settings: ServerLogSettings
+): ServerLogPanelMessage {
+  const activeCategoryCount = countActiveCategories(settings.categoryChannels)
+  const summary = formatChannelSummary(settings)
+
+  const container = new ContainerBuilder()
+    .setAccentColor(ACCENT_ON)
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        '# 로그 설정 저장 완료\n-# <a:Lishi_07:1521143128025731263> 로그 설정이 정상적으로 저장을 완료했어요. 이제부터 설정한 설정 값으로 지정채널에 로그를 기록해요.'
+      )
+    )
+    .addSeparatorComponents(buildDivider())
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        `### 저장된 상태\n상태: **${
+          settings.enabled ? '활성화' : '비활성화'
+        }**\n연결: ${activeCategoryCount}개 카테고리\n${summary}`
+      )
+    )
+    .addSeparatorComponents(buildDivider())
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        '-# 다시 설정하려면 `/관리로그`를 입력해 주세요.'
+      )
+    )
+
+  return {
+    components: [container],
+    flags: SERVER_LOG_PANEL_FLAGS,
+  }
+}
+
 function pickAccent(enabled: boolean, hasDraft: boolean): number {
   if (hasDraft) return ACCENT_DRAFT
   return enabled ? ACCENT_ON : ACCENT_OFF

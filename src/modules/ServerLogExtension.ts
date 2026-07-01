@@ -3,15 +3,35 @@ import {
   categoryForAuditAction,
   isServerLogCategory,
 } from '../features/serverLogs/serverLogCategories'
-import { buildServerLogMessage } from '../features/serverLogs/serverLogMessage'
+import {
+  type MemberActivity,
+  type MessageActivity,
+  type ReactionActivity,
+  describeMemberJoin,
+  describeMemberLeave,
+  describeMessageDelete,
+  describeMessageEdit,
+  describeReactionAdd,
+  describeReactionRemove,
+  detectVoiceActivity,
+} from '../features/serverLogs/serverLogEvents'
+import {
+  buildMemberLogMessage,
+  buildMessageLogMessage,
+  buildReactionLogMessage,
+  buildServerLogMessage,
+  buildVoiceLogMessage,
+} from '../features/serverLogs/serverLogMessage'
 import {
   SERVER_LOG_COMPONENT_PREFIX,
   SERVER_LOG_PAGE_COUNT,
   buildCancelledServerLogPanel,
   buildExpiredServerLogPanel,
+  buildSavedServerLogPanel,
   buildServerLogPanel,
 } from '../features/serverLogs/serverLogPanel'
 import {
+  type ServerLogSettings,
   commitDraft,
   discardDraft,
   getDraftServerLogSettings,
@@ -26,16 +46,26 @@ import { Extension, applicationCommand, listener } from '@pikokr/command.ts'
 import {
   ApplicationCommandType,
   ChatInputCommandInteraction,
+  type Client,
+  type Collection,
+  Events,
   Guild,
   GuildAuditLogsEntry,
   type GuildBasedChannel,
+  type GuildMember,
   Interaction,
   Message,
   MessageComponentInteraction,
   MessageFlags,
+  type MessageReaction,
   NewsChannel,
+  type PartialMessage,
+  type PartialMessageReaction,
+  type PartialUser,
   PermissionFlagsBits,
   TextChannel,
+  type User,
+  VoiceState,
 } from 'discord.js'
 
 const SESSION_TIMEOUT_MS = 3 * 60 * 1000
@@ -104,6 +134,12 @@ class ServerLogExtensionClass extends Extension {
       return
     }
 
+    if (result.kind === 'saved') {
+      await interaction.update(buildSavedServerLogPanel(result.settings))
+      clearSession(guildId)
+      return
+    }
+
     await interaction.update(
       buildServerLogPanel(result.settings, result.page, hasDraft(guildId))
     )
@@ -130,7 +166,9 @@ class ServerLogExtensionClass extends Extension {
 
       await channel.send({
         allowedMentions: { parse: [] },
-        components: [buildServerLogMessage(entry, category)],
+        components: [
+          buildServerLogMessage(entry, category, guild, this.client),
+        ],
         flags: MessageFlags.IsComponentsV2,
       })
     } catch (err) {
@@ -142,6 +180,259 @@ class ServerLogExtensionClass extends Extension {
       )
     }
   }
+
+  @listener({ event: Events.MessageUpdate })
+  async onMessageUpdate(
+    oldMessage: Message | PartialMessage,
+    newMessage: Message | PartialMessage
+  ): Promise<void> {
+    if (oldMessage.guild === null || oldMessage.author?.bot === true) return
+
+    const guild = oldMessage.guild
+    if (oldMessage.content === newMessage.content) return
+
+    await sendMessageLog(
+      guild,
+      describeMessageEdit(oldMessage, newMessage),
+      'messages',
+      this.client
+    )
+  }
+
+  @listener({ event: Events.MessageDelete })
+  async onMessageDelete(message: Message | PartialMessage): Promise<void> {
+    if (message.guild === null || message.author?.bot === true) return
+
+    const guild = message.guild
+
+    await sendMessageLog(
+      guild,
+      describeMessageDelete(message),
+      'messages',
+      this.client
+    )
+  }
+
+  @listener({ event: Events.MessageBulkDelete })
+  async onMessageBulkDelete(
+    messages: Collection<string, Message | PartialMessage>,
+    channel: GuildBasedChannel
+  ): Promise<void> {
+    if (channel.guild === undefined) return
+    const guild = channel.guild
+
+    const activity: MessageActivity = {
+      authorId: null,
+      authorTag: null,
+      channelId: channel.id,
+      count: messages.size,
+      kind: 'bulkDelete',
+      messageId: 'bulk',
+      newContent: null,
+      oldContent: null,
+    }
+
+    await sendMessageLog(guild, activity, 'messages', this.client)
+  }
+
+  @listener({ event: Events.VoiceStateUpdate })
+  async onVoiceStateUpdate(
+    oldState: VoiceState,
+    newState: VoiceState
+  ): Promise<void> {
+    if (oldState.guild === undefined) return
+    const guild = oldState.guild
+
+    const activity = detectVoiceActivity(oldState, newState)
+    if (activity === null) return
+
+    const settings = await getServerLogSettings(guild.id)
+    if (!settings.enabled) return
+
+    const channelId = settings.categoryChannels.voice
+    if (channelId === null || channelId === undefined) return
+
+    const logChannel = guild.channels.cache.get(channelId)
+    if (!isSendableLogChannel(logChannel)) return
+
+    try {
+      await logChannel.send({
+        allowedMentions: { parse: [] },
+        components: [
+          buildVoiceLogMessage(activity, 'voice', guild, this.client),
+        ],
+        flags: MessageFlags.IsComponentsV2,
+      })
+    } catch (err) {
+      logger.error(
+        'ServerLog',
+        `음성 로그 전송 실패: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      )
+    }
+  }
+  @listener({ event: Events.GuildMemberAdd })
+  async onGuildMemberAdd(member: GuildMember): Promise<void> {
+    const guild = member.guild
+    const activity = describeMemberJoin(member)
+    await sendMemberLog(guild, activity, 'members', this.client)
+  }
+
+  @listener({ event: Events.GuildMemberRemove })
+  async onGuildMemberRemove(member: GuildMember): Promise<void> {
+    const guild = member.guild
+    const activity = describeMemberLeave(member)
+    await sendMemberLog(guild, activity, 'members', this.client)
+  }
+
+  @listener({ event: Events.MessageReactionAdd })
+  async onMessageReactionAdd(
+    reaction: MessageReaction | PartialMessageReaction,
+    user: User | PartialUser
+  ): Promise<void> {
+    if (user.bot) return
+    const partialReaction = reaction.partial
+      ? await reaction.fetch().catch(() => null)
+      : reaction
+    if (partialReaction === null) {
+      logger.warn('ServerLog', 'reaction fetch 실패')
+      return
+    }
+    const fullUser = user.partial ? await user.fetch().catch(() => null) : user
+    if (fullUser === null) return
+
+    const message = partialReaction.message
+    if (message.guildId === null) {
+      logger.warn('ServerLog', 'guildId가 null')
+      return
+    }
+
+    const guild = message.client.guilds.cache.get(message.guildId)
+    if (guild === undefined) {
+      logger.warn('ServerLog', `guild ${message.guildId} 캐시에 없음`)
+      return
+    }
+
+    const activity = await describeReactionAdd(partialReaction, fullUser)
+    if (activity === null) return
+
+    await sendReactionLog(guild, activity, 'expressions', this.client)
+  }
+
+  @listener({ event: Events.MessageReactionRemove })
+  async onMessageReactionRemove(
+    reaction: MessageReaction | PartialMessageReaction,
+    user: User | PartialUser
+  ): Promise<void> {
+    if (user.bot) return
+    const partialReaction = reaction.partial
+      ? await reaction.fetch().catch(() => null)
+      : reaction
+    if (partialReaction === null) return
+    const fullUser = user.partial ? await user.fetch().catch(() => null) : user
+    if (fullUser === null) return
+
+    const message = partialReaction.message
+    if (message.guildId === null) return
+
+    const guild = message.client.guilds.cache.get(message.guildId)
+    if (guild === undefined) return
+
+    const activity = await describeReactionRemove(partialReaction, fullUser)
+    if (activity === null) return
+
+    await sendReactionLog(guild, activity, 'expressions', this.client)
+  }
+}
+
+async function sendMessageLog(
+  guild: Guild,
+  activity: MessageActivity,
+  category: ServerLogCategory,
+  client: Client
+): Promise<void> {
+  const settings = await getServerLogSettings(guild.id)
+  if (!settings.enabled) return
+
+  const channelId = settings.categoryChannels[category]
+  if (channelId === null || channelId === undefined) return
+
+  const logChannel = guild.channels.cache.get(channelId)
+  if (!isSendableLogChannel(logChannel)) return
+
+  try {
+    await logChannel.send({
+      allowedMentions: { parse: [] },
+      components: [buildMessageLogMessage(activity, category, guild, client)],
+      flags: MessageFlags.IsComponentsV2,
+    })
+  } catch (err) {
+    logger.error(
+      'ServerLog',
+      `메시지 로그 전송 실패: ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    )
+  }
+}
+
+async function sendMemberLog(
+  guild: Guild,
+  activity: MemberActivity,
+  category: ServerLogCategory,
+  client: Client
+): Promise<void> {
+  const settings = await getServerLogSettings(guild.id)
+  if (!settings.enabled) return
+
+  const channelId = settings.categoryChannels[category]
+  if (channelId === null || channelId === undefined) return
+
+  const logChannel = guild.channels.cache.get(channelId)
+  if (!isSendableLogChannel(logChannel)) return
+
+  try {
+    await logChannel.send({
+      allowedMentions: { parse: [] },
+      components: [buildMemberLogMessage(activity, category, guild, client)],
+      flags: MessageFlags.IsComponentsV2,
+    })
+  } catch (err) {
+    logger.error(
+      'ServerLog',
+      `멤버 로그 전송 실패: ${err instanceof Error ? err.message : String(err)}`
+    )
+  }
+}
+
+async function sendReactionLog(
+  guild: Guild,
+  activity: ReactionActivity,
+  category: ServerLogCategory,
+  client: Client
+): Promise<void> {
+  const settings = await getServerLogSettings(guild.id)
+  if (!settings.enabled) return
+
+  const channelId = settings.categoryChannels[category]
+  if (channelId === null || channelId === undefined) return
+
+  const logChannel = guild.channels.cache.get(channelId)
+  if (!isSendableLogChannel(logChannel)) return
+
+  try {
+    await logChannel.send({
+      allowedMentions: { parse: [] },
+      components: [buildReactionLogMessage(activity, category, guild, client)],
+      flags: MessageFlags.IsComponentsV2,
+    })
+  } catch (err) {
+    logger.error(
+      'ServerLog',
+      `반응 로그 전송 실패: ${err instanceof Error ? err.message : String(err)}`
+    )
+  }
 }
 
 type InteractionResult =
@@ -149,6 +440,10 @@ type InteractionResult =
       readonly kind: 'update'
       readonly settings: ReturnType<typeof getDraftServerLogSettings>
       readonly page: number
+    }
+  | {
+      readonly kind: 'saved'
+      readonly settings: ServerLogSettings
     }
   | { readonly kind: 'cancelled' }
 
@@ -205,7 +500,7 @@ async function handleSettingsInteraction(
 
   if (interaction.isButton() && action === 'save') {
     const settings = await commitDraft(guildId)
-    return { kind: 'update', page: currentPage, settings }
+    return { kind: 'saved', settings }
   }
 
   if (interaction.isButton() && action === 'cancel') {
