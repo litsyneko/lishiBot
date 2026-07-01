@@ -153,6 +153,7 @@ export type RandomDropSettings = {
   readonly endHour: number
   readonly channelId: string | null
   readonly adminChannelId: string | null
+  readonly mentionRoleId: string | null
 }
 
 export type RandomDrop = {
@@ -180,8 +181,8 @@ const gambleXpPerBet = 5
 const questReward = 5000
 const questGambleRequired = 3
 const questRpsRequired = 1
-const activityRewardPer = 100
-const activityMaxRewards = 5
+const activityRewardPer = 200
+const activityMaxRewards = 10
 const dayMs = 24 * 60 * 60 * 1000
 
 export function createEconomyService(): EconomyService {
@@ -557,6 +558,7 @@ export function createEconomyService(): EconomyService {
       endHour: data.end_hour ?? 23,
       channelId: data.channel_id ?? null,
       adminChannelId: data.admin_channel_id ?? null,
+      mentionRoleId: data.mention_role_id ?? null,
     }
   }
 
@@ -578,6 +580,8 @@ export function createEconomyService(): EconomyService {
     if (settings.channelId !== undefined) update.channel_id = settings.channelId
     if (settings.adminChannelId !== undefined)
       update.admin_channel_id = settings.adminChannelId
+    if (settings.mentionRoleId !== undefined)
+      update.mention_role_id = settings.mentionRoleId
 
     const { error } = await supabase
       .from('random_drops')

@@ -140,12 +140,12 @@ class AiMentionExtensionClass extends Extension {
 
   @listener({ event: 'messageCreate' })
   async messageCreate(message: Message) {
-    if (message.author.bot) {
+    const botId = this.client.user?.id
+    if (botId === undefined) {
       return
     }
 
-    const botId = this.client.user?.id
-    if (botId === undefined) {
+    if (message.author.bot) {
       return
     }
 
@@ -412,6 +412,8 @@ class AiMentionExtensionClass extends Extension {
       return
     }
 
+    let thinkingMessageId: string | undefined
+
     try {
       const referenced = await message.channel.messages.fetch(
         referencedMessageId
@@ -440,6 +442,7 @@ class AiMentionExtensionClass extends Extension {
       const sent = await message.reply(
         '<a:kirakira:1519382939778158784> AI가 답장을 생각하고 있어요..'
       )
+      thinkingMessageId = sent.id
       if (
         'sendTyping' in message.channel &&
         typeof message.channel.sendTyping === 'function'
@@ -470,6 +473,7 @@ class AiMentionExtensionClass extends Extension {
 
       try {
         await message.channel.messages.delete(sent.id)
+        thinkingMessageId = undefined
       } catch (err) {
         // already deleted
       }
@@ -488,6 +492,28 @@ class AiMentionExtensionClass extends Extension {
           err instanceof Error ? err.message : String(err)
         }`
       )
+      if (thinkingMessageId !== undefined) {
+        try {
+          await message.channel.messages.delete(thinkingMessageId)
+        } catch (deleteErr) {
+          logger.debug(
+            'AI',
+            `thinking message cleanup failed: ${
+              deleteErr instanceof Error ? deleteErr.message : String(deleteErr)
+            }`
+          )
+        }
+      }
+      await message
+        .reply('AI 답장 처리 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요.')
+        .catch((replyErr: unknown) => {
+          logger.debug(
+            'AI',
+            `reply failed: ${
+              replyErr instanceof Error ? replyErr.message : String(replyErr)
+            }`
+          )
+        })
     }
   }
 }

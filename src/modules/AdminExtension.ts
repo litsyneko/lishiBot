@@ -138,7 +138,14 @@ class AdminExtensionClass extends Extension {
       description: '오늘 예정 드롭 시간 알림을 받을 채널',
       required: false,
     })
-    _adminChannel: unknown
+    _adminChannel: unknown,
+    @option({
+      type: ApplicationCommandOptionType.Role,
+      name: '멘션역할',
+      description: '보상 발송시 멘션할 역할 (비워두면 멘션 없음)',
+      required: false,
+    })
+    _mentionRole: unknown
   ) {
     requireServerManager(i)
 
@@ -163,6 +170,8 @@ class AdminExtensionClass extends Extension {
       const adminChannel = i.options.getChannel('관리채널', false)
       const adminChannelId =
         adminChannel?.id ?? settings?.adminChannelId ?? null
+      const mentionRole = i.options.getRole('멘션역할', false)
+      const mentionRoleId = mentionRole?.id ?? settings?.mentionRoleId ?? null
 
       await economy.setRandomDropSettings(guild.id, {
         enabled: true,
@@ -172,15 +181,19 @@ class AdminExtensionClass extends Extension {
         endHour: end,
         channelId,
         adminChannelId,
+        mentionRoleId,
       })
 
       const channelLabel = channelId ? `<#${channelId}>` : '시스템 채널'
       const adminLabel = adminChannelId
         ? `<#${adminChannelId}>`
         : '미설정 (알림 없음)'
+      const mentionLabel = mentionRoleId
+        ? `<@&${mentionRoleId}>`
+        : '미설정 (멘션 없음)'
       await replyPublic(
         i,
-        `🎁 선착 보상을 **활성화**했어요.\n전송 채널: ${channelLabel}\n관리 채널: ${adminLabel}\n지급 금액: ${min.toLocaleString()}원 ~ ${max.toLocaleString()}원\n${start}시~${end}시 사이에 하루 4회 랜덤 발송, 선착 4명 수령`
+        `🎁 선착 보상을 **활성화**했어요.\n전송 채널: ${channelLabel}\n관리 채널: ${adminLabel}\n멘션 역할: ${mentionLabel}\n지급 금액: ${min.toLocaleString()}원 ~ ${max.toLocaleString()}원\n${start}시~${end}시 사이에 하루 4회 랜덤 발송, 선착 4명 수령`
       )
     }
   }

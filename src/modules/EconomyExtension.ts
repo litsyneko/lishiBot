@@ -1,5 +1,6 @@
 import { formatWon } from '../config/korea'
 import { createEconomyService } from '../features/economy/economy'
+import { renderLevelCard } from '../features/economy/levelCard'
 import {
   pickAttendanceMessage,
   pickLotteryMessage,
@@ -8,7 +9,9 @@ import { replyEphemeral, replyPublic } from '../utils/replies'
 import { Extension, SubCommandGroup, option } from '@pikokr/command.ts'
 import {
   ApplicationCommandOptionType,
+  AttachmentBuilder,
   ChatInputCommandInteraction,
+  MessageFlags,
 } from 'discord.js'
 
 const economyGroup = new SubCommandGroup({
@@ -218,16 +221,46 @@ class EconomyExtensionClass extends Extension {
   async level(i: ChatInputCommandInteraction) {
     try {
       const result = await economy.getLevel(i.user.id)
-      const xpNeeded = result.level * 500
-      const progress = Math.floor((result.xp / xpNeeded) * 100)
-      const bar = `${'🟩'.repeat(Math.floor(progress / 10))}${'⬛'.repeat(
-        10 - Math.floor(progress / 10)
-      )}`
+      const xpNeeded = result.level * result.level * 300
+      const [balance, bankBalance] = await Promise.all([
+        economy.getBalance(i.user.id),
+        economy.getBankBalance(i.user.id),
+      ])
+      const avatarUrl = i.user.displayAvatarURL({
+        extension: 'png',
+        size: 256,
+      })
 
-      await replyPublic(
-        i,
-        `📊 **<@${i.user.id}> 레벨 정보**\n\n레벨: **${result.level}**\nXP: ${result.xp} / ${xpNeeded} (${progress}%)\n${bar}`
-      )
+      const png = await renderLevelCard({
+        level: result.level,
+        xp: result.xp,
+        xpNeeded,
+        balance: balance.amount,
+        bankBalance,
+        username: i.user.username,
+        avatarUrl,
+      })
+
+      const attachment = new AttachmentBuilder(png, {
+        name: `level-${i.user.id}.png`,
+      })
+
+      const caption = `📊 **${i.user.username}** 님 — 레벨 **${
+        result.level
+      }** · XP ${result.xp.toLocaleString()} / ${xpNeeded.toLocaleString()}`
+
+      if (i.deferred || i.replied) {
+        await i.followUp({
+          content: caption,
+          files: [attachment],
+        })
+        return
+      }
+      await i.reply({
+        content: caption,
+        files: [attachment],
+        flags: MessageFlags.SuppressEmbeds,
+      })
     } catch (err) {
       await replyEphemeral(
         i,
@@ -272,7 +305,7 @@ class EconomyExtensionClass extends Extension {
           i,
           `🏦 **은행 잔액**\n\n지갑: ${formatWon(
             balance.amount
-          )}\n은행: ${formatWon(bankBalance)}\n이자율: 일 5%`
+          )}\n은행: ${formatWon(bankBalance)}\n이자율: 일 0.5%`
         )
         return
       }

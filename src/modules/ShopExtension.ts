@@ -4,7 +4,7 @@ import type { InventoryEntry, ShopItem } from '../features/economy/economy'
 import { Extension, SubCommandGroup, option } from '@pikokr/command.ts'
 import {
   ApplicationCommandOptionType,
-  type ChatInputCommandInteraction,
+  ChatInputCommandInteraction,
   ContainerBuilder,
   MessageFlags,
   SeparatorBuilder,

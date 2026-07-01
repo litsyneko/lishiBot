@@ -85,4 +85,6 @@ class BoostExtensionClass extends Extension {
   }
 }
 
-export default BoostExtensionClass
+export const setup = () => {
+  return new BoostExtensionClass()
+}

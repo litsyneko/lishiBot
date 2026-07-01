@@ -21,6 +21,7 @@
     "@ai-sdk/openai-compatible": "^3.0.0",
     "@discordjs/builders": "^1.14.1",
     "@discordjs/rest": "^2.6.1",
+    "@napi-rs/canvas": "^1.0.1",
     "@pikokr/command.ts": "^5.4.0",
     "@supabase/supabase-js": "^2.108.2",
     "ai": "^7.0.2",

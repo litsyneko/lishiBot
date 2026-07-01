@@ -127,6 +127,7 @@ type ActiveDrop = {
   amounts: Map<string, number>
   createdAt: number
   expired: boolean
+  mentionRoleId: string | null
 }
 
 const activeDrops = new Map<string, ActiveDrop>()
@@ -488,6 +489,7 @@ class RewardExtensionClass extends Extension {
           amounts: new Map(),
           createdAt: Date.now(),
           expired: false,
+          mentionRoleId: settings.mentionRoleId,
         }
 
         const container = buildActiveDropContainer(
@@ -495,8 +497,16 @@ class RewardExtensionClass extends Extension {
           settings.dropsPerDay
         )
         const msg = await targetChannel.send({
+          content:
+            activeDrop.mentionRoleId !== null
+              ? `<@&${activeDrop.mentionRoleId}>`
+              : undefined,
           components: [container],
           flags: MessageFlags.IsComponentsV2,
+          allowedMentions:
+            activeDrop.mentionRoleId !== null
+              ? { roles: [activeDrop.mentionRoleId] }
+              : undefined,
         })
         activeDrop.messageId = msg.id
         activeDrops.set(drop.id, activeDrop)

@@ -192,7 +192,7 @@ export function playSlot(input: {
 
   if (matchCount >= 5 && matchedSymbol !== undefined) {
     win = true
-    multiplier = matchedSymbol.payout * 2
+    multiplier = matchedSymbol.payout * 3
     payout = Math.floor(bet * multiplier)
   } else if (matchCount >= 4 && matchedSymbol !== undefined) {
     win = true

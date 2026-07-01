@@ -31,7 +31,7 @@ import {
   ApplicationCommandOptionType,
   ButtonBuilder,
   ButtonStyle,
-  type ChatInputCommandInteraction,
+  ChatInputCommandInteraction,
   ComponentType,
   ContainerBuilder,
   type Message,

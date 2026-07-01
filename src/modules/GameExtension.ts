@@ -122,7 +122,7 @@ class GameExtensionClass extends Extension {
     }
     if (result.result === 'win') {
       try {
-        await economy.addBalance(i.user.id, 1000)
+        await economy.addBalance(i.user.id, 2000)
       } catch (err) {
         logger.warn(
           'Game',
@@ -143,7 +143,7 @@ class GameExtensionClass extends Extension {
     const msg = pickRpsMessage(`<@${i.user.id}>`, tier)
     const label =
       result.result === 'win'
-        ? '승리! +1,000원'
+        ? '승리! +2,000원'
         : result.result === 'lose'
         ? '패배'
         : '무승부'
