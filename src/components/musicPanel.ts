@@ -138,7 +138,7 @@ function buildNowplayingSection(
   player: CustomPlayer,
   trackInfo: Track['info']
 ): void {
-  const headerText = `-# 🎵 <#${player.voiceChannelId}> 에서 ${
+  const headerText = `-# <a:Lishi_07:1521143128025731263> <#${player.voiceChannelId}> 에서 ${
     player.paused ? '일시 정지' : '재생'
   } 중`
   const titleLine =
@@ -466,8 +466,8 @@ export function buildTrackAdded(input: AddedToQueueInput): MusicPanelMessage {
   const { track, queuePosition, isPlaying } = input
 
   const firstLine = isPlaying
-    ? '🎶 노래를 곧 재생할게요!'
-    : `🎵 대기열에 추가했어요.`
+    ? '<a:Lishi_07:1521143128025731263> 노래를 곧 재생할게요!'
+    : `<a:Lishi_07:1521143128025731263> 대기열에 추가했어요.`
   const titleLine =
     track.uri !== undefined && track.uri.length > 0
       ? `### [${escapeMarkdown(track.title)}](${track.uri})`
@@ -553,7 +553,7 @@ export type StoppedPanelInput = {
 }
 
 export function buildStoppedPanel(input: StoppedPanelInput): MusicPanelMessage {
-  const header = '⏹ 재생을 종료했어요.'
+  const header = '⏹ <a:Lishi_07:1521143128025731263> 재생을 종료했어요.'
 
   const textParts: string[] = [header]
 
