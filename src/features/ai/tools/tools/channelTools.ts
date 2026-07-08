@@ -304,9 +304,10 @@ export function editChannelTool(client: Client): ToolDefinition {
       },
     },
     permission: {
+      // 채널 수정(이름/주제/권한/슬로우모드 등)은 서버 구조 변경 → 리시 승인 대상(356).
       requireManageGuild: true,
       requireAdmin: false,
-      risk: 'warning',
+      risk: 'danger',
     },
     async execute(
       args: Record<string, unknown>,
