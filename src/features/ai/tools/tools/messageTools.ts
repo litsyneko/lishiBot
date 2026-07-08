@@ -1,21 +1,10 @@
+import { resolveAccessibleChannel } from '../helpers/channelAccess'
 import type {
   ToolDefinition,
   ToolExecutionContext,
   ToolResult,
 } from '../toolTypes'
-import { Client, type GuildTextBasedChannel } from 'discord.js'
-
-// 채널 조회 헬퍼 — 길드 텍스트 채널만 반환(DM/비텍스트 제외).
-function getTextChannel(
-  client: Client,
-  channelId: string
-): GuildTextBasedChannel | null {
-  const channel = client.channels.cache.get(channelId)
-  if (channel === undefined || !channel.isTextBased() || channel.isDMBased()) {
-    return null
-  }
-  return channel as GuildTextBasedChannel
-}
+import { Client } from 'discord.js'
 
 function strArg(args: Record<string, unknown>, key: string): string {
   const v = args[key]
@@ -57,9 +46,13 @@ export function editMessageTool(client: Client): ToolDefinition {
       if (!messageId || !content) {
         return { success: false, message: 'message_id와 content가 필요해요.' }
       }
-      const ch = getTextChannel(client, channelId)
-      if (ch === null)
-        return { success: false, message: '채널을 찾을 수 없어요.' }
+      const access = await resolveAccessibleChannel(
+        client,
+        context.userId,
+        channelId
+      )
+      if (!access.ok) return { success: false, message: access.reason }
+      const ch = access.channel
       try {
         const msg = await ch.messages.fetch(messageId)
         if (msg.author.id !== client.user?.id) {
@@ -110,9 +103,13 @@ export function deleteMessageTool(client: Client): ToolDefinition {
       const messageId = strArg(args, 'message_id')
       if (!messageId)
         return { success: false, message: 'message_id가 필요해요.' }
-      const ch = getTextChannel(client, channelId)
-      if (ch === null)
-        return { success: false, message: '채널을 찾을 수 없어요.' }
+      const access = await resolveAccessibleChannel(
+        client,
+        context.userId,
+        channelId
+      )
+      if (!access.ok) return { success: false, message: access.reason }
+      const ch = access.channel
       try {
         const msg = await ch.messages.fetch(messageId)
         await msg.delete()
@@ -153,9 +150,13 @@ export function pinMessageTool(client: Client): ToolDefinition {
       const messageId = strArg(args, 'message_id')
       if (!messageId)
         return { success: false, message: 'message_id가 필요해요.' }
-      const ch = getTextChannel(client, channelId)
-      if (ch === null)
-        return { success: false, message: '채널을 찾을 수 없어요.' }
+      const access = await resolveAccessibleChannel(
+        client,
+        context.userId,
+        channelId
+      )
+      if (!access.ok) return { success: false, message: access.reason }
+      const ch = access.channel
       try {
         const msg = await ch.messages.fetch(messageId)
         await msg.pin()
@@ -195,9 +196,13 @@ export function unpinMessageTool(client: Client): ToolDefinition {
       const messageId = strArg(args, 'message_id')
       if (!messageId)
         return { success: false, message: 'message_id가 필요해요.' }
-      const ch = getTextChannel(client, channelId)
-      if (ch === null)
-        return { success: false, message: '채널을 찾을 수 없어요.' }
+      const access = await resolveAccessibleChannel(
+        client,
+        context.userId,
+        channelId
+      )
+      if (!access.ok) return { success: false, message: access.reason }
+      const ch = access.channel
       try {
         const msg = await ch.messages.fetch(messageId)
         await msg.unpin()
@@ -245,9 +250,13 @@ export function reactMessageTool(client: Client): ToolDefinition {
       if (!messageId || !emoji) {
         return { success: false, message: 'message_id와 emoji가 필요해요.' }
       }
-      const ch = getTextChannel(client, channelId)
-      if (ch === null)
-        return { success: false, message: '채널을 찾을 수 없어요.' }
+      const access = await resolveAccessibleChannel(
+        client,
+        context.userId,
+        channelId
+      )
+      if (!access.ok) return { success: false, message: access.reason }
+      const ch = access.channel
       try {
         const msg = await ch.messages.fetch(messageId)
         await msg.react(emoji)
@@ -289,9 +298,13 @@ export function searchMessagesTool(client: Client): ToolDefinition {
       const query = strArg(args, 'query')
       if (!query)
         return { success: false, message: '찾을 키워드(query)가 필요해요.' }
-      const ch = getTextChannel(client, channelId)
-      if (ch === null)
-        return { success: false, message: '채널을 찾을 수 없어요.' }
+      const access = await resolveAccessibleChannel(
+        client,
+        context.userId,
+        channelId
+      )
+      if (!access.ok) return { success: false, message: access.reason }
+      const ch = access.channel
       try {
         const fetched = await ch.messages.fetch({ limit: 100 })
         const lower = query.toLowerCase()

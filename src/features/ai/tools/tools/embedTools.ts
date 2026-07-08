@@ -1,3 +1,4 @@
+import { resolveAccessibleChannel } from '../helpers/channelAccess'
 import type {
   ToolDefinition,
   ToolExecutionContext,
@@ -5,12 +6,6 @@ import type {
   ToolResult,
 } from '../toolTypes'
 import { Client, EmbedBuilder } from 'discord.js'
-
-type ChannelLike = {
-  id: string
-  isTextBased: () => boolean
-  send: (options: Record<string, unknown>) => Promise<{ id: string }>
-}
 
 // draft/send 공통 임베드 파라미터.
 const EMBED_PROPERTIES: ToolFunctionDeclaration['parameters']['properties'] = {
@@ -79,13 +74,13 @@ function buildEmbedFromArgs(
   return embed
 }
 
-// 임베드 초안 — 구성만 하고 전송하지 않는다. "이대로 보낼까요?" 확인용.
-export function draftEmbedTool(_client: Client): ToolDefinition {
+// 임베드 초안 — 현재 채널에 "초안 미리보기"로 실제 렌더링해서 보여준다(최종 전송 아님).
+export function draftEmbedTool(client: Client): ToolDefinition {
   return {
     declaration: {
       name: 'draft_embed',
       description:
-        '임베드(제목/설명/필드/색상/이미지 등)를 초안으로 구성해 미리 보여줍니다. 실제 전송은 하지 않아요. 사용자에게 "이대로 보낼까요?"라고 확인한 뒤 send_embed로 전송하세요.',
+        '임베드를 구성해 현재 채널에 "초안 미리보기"로 실제 렌더링해서 보여줍니다. 아직 최종 전송이 아니에요. 사용자가 "이대로 보내줘"라고 확정하면 send_embed로 원하는 채널에 전송하세요.',
       parameters: {
         type: 'object',
         properties: EMBED_PROPERTIES,
@@ -97,16 +92,38 @@ export function draftEmbedTool(_client: Client): ToolDefinition {
       requireAdmin: false,
       risk: 'info',
     },
-    async execute(args: Record<string, unknown>): Promise<ToolResult> {
+    async execute(
+      args: Record<string, unknown>,
+      context: ToolExecutionContext
+    ): Promise<ToolResult> {
       const built = buildEmbedFromArgs(args)
       if ('error' in built) return { success: false, message: built.error }
-      const data = built.toJSON()
-      const summary = `임베드 초안을 만들었어요 — 제목: "${
-        data.title ?? '(없음)'
-      }", 필드 ${
-        data.fields?.length ?? 0
-      }개. 이대로 보낼까요? (send_embed로 전송)`
-      return { success: true, message: summary, data: { embed: data } }
+      const access = await resolveAccessibleChannel(
+        client,
+        context.userId,
+        context.channelId
+      )
+      if (!access.ok) return { success: false, message: access.reason }
+      try {
+        await access.channel.send({
+          content:
+            '🔹 **임베드 초안 미리보기** — 아직 전송 전이에요. 이대로 보낼까요?',
+          embeds: [built],
+        })
+        const data = built.toJSON()
+        return {
+          success: true,
+          message: `초안 미리보기를 띄웠어요 (제목 "${
+            data.title ?? '없음'
+          }", 필드 ${
+            data.fields?.length ?? 0
+          }개). 사용자가 확정하면 send_embed로 전송하세요.`,
+          data: { embed: data },
+        }
+      } catch (error) {
+        const m = error instanceof Error ? error.message : String(error)
+        return { success: false, message: `초안 미리보기 중 오류: ${m}` }
+      }
     },
   }
 }
@@ -144,15 +161,15 @@ export function sendEmbedTool(client: Client): ToolDefinition {
 
       const channelId =
         (args.channel_id as string | undefined)?.trim() || context.channelId
-      const channel = client.channels.cache.get(channelId) as
-        | ChannelLike
-        | undefined
-      if (channel === undefined || !channel.isTextBased()) {
-        return { success: false, message: '채널을 찾을 수 없어요.' }
-      }
+      const access = await resolveAccessibleChannel(
+        client,
+        context.userId,
+        channelId
+      )
+      if (!access.ok) return { success: false, message: access.reason }
 
       try {
-        const sent = await channel.send({ embeds: [built] })
+        const sent = await access.channel.send({ embeds: [built] })
         const label =
           channelId === context.channelId ? '현재 채널' : `<#${channelId}>`
         return {
