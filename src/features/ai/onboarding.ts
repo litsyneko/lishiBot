@@ -1,5 +1,9 @@
 import { logger } from '../../utils/logger'
-import { getServerProfile } from './serverProfile'
+import {
+  getOnboardingDismissedUntil,
+  getServerProfile,
+  setOnboardingDismissedUntil,
+} from './serverProfile'
 
 // ── 온보딩 판정 결과 ──
 
@@ -54,6 +58,9 @@ export async function shouldShowOnboarding(
   try {
     const profile = await getServerProfile(guildId)
     if (profile.onboardedAt !== null) return 'completed'
+    // 2h/24h 숨김(agent_scope 영속) 체크 — 봇 재시작해도 유지된다.
+    const until = getOnboardingDismissedUntil(profile)
+    if (until !== null && Date.now() < until) return 'dismissed'
     return 'show'
   } catch (err) {
     logger.warn(
@@ -73,33 +80,18 @@ export type DismissDuration = '2h' | '24h' | 'next_chat'
  * - `24h`: 24시간 후 다시 표시
  * - `next_chat`: 다음 메시지(messageCreate) 시 다시 표시
  */
-export function dismissOnboarding(
+export async function dismissOnboarding(
   guildId: string,
   duration: DismissDuration
-): void {
-  const now = Date.now()
-  switch (duration) {
-    case '2h':
-      dismissals.set(guildId, {
-        expiresAt: now + 2 * 60 * 60 * 1000,
-        isNextChat: false,
-      })
-      break
-    case '24h':
-      dismissals.set(guildId, {
-        expiresAt: now + 24 * 60 * 60 * 1000,
-        isNextChat: false,
-      })
-      break
-    case 'next_chat':
-      dismissals.set(guildId, {
-        expiresAt: Infinity,
-        isNextChat: true,
-      })
-      break
+): Promise<void> {
+  if (duration === 'next_chat') {
+    // 세션성 숨김은 RAM 유지 — 재시작 시 다음 채팅에 다시 안내되는 게 의도.
+    dismissals.set(guildId, { expiresAt: Infinity, isNextChat: true })
+    logger.info('Onboarding', `온보딩 숨김(next_chat): guild=${guildId}`)
+    return
   }
-  logger.info(
-    'Onboarding',
-    `온보딩 숨김: guild=${guildId} duration=${duration}`
-  )
+  // 2h/24h는 agent_scope에 영속 → 봇 재시작해도 숨김이 유지된다.
+  const ms = duration === '2h' ? 2 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000
+  await setOnboardingDismissedUntil(guildId, Date.now() + ms)
+  logger.info('Onboarding', `온보딩 숨김(${duration}, DB): guild=${guildId}`)
 }

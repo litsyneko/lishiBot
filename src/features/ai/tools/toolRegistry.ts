@@ -54,6 +54,11 @@ import {
   setRolePermissionsTool,
 } from './tools/roleManageTools'
 import { listRolesTool, lookupRoleTool } from './tools/roleTools'
+import {
+  cancelScheduledTaskTool,
+  listScheduledTasksTool,
+  scheduleTaskTool,
+} from './tools/scheduleTools'
 import { sendMessageTool } from './tools/sendMessageTool'
 import { sendStickerTool } from './tools/sendStickerTool'
 import { getServerInfoTool } from './tools/serverTools'
@@ -114,6 +119,9 @@ export function createToolRegistry(client: Client): ToolRegistry {
   register(sendStickerTool(client))
   register(sendMessageTool(client))
   register(saveMemoryTool)
+  register(scheduleTaskTool)
+  register(listScheduledTasksTool)
+  register(cancelScheduledTaskTool)
   register(playMusicTool(client))
   register(stopMusicTool(client))
   register(pauseMusicTool(client))

@@ -15,6 +15,22 @@ export const MIN_INTERVAL_SEC = 5 * 60
 // jobId → 살아있는 croner 인스턴스
 const active = new Map<number, Cron>()
 
+// 실행부(AI 턴)는 부팅 시 주입한다. 스케줄러는 타이밍만 소유.
+let globalRunner: CronRunner | null = null
+
+/** 예약 트리거 시 실행할 콜백을 등록한다(부팅 시 1회). */
+export function setCronRunner(runner: CronRunner): void {
+  globalRunner = runner
+}
+
+// 현재 실행 중인 예약 id. heartbeat가 cron과 겹발화하지 않게 defer 판정에 쓴다(같은 프로세스).
+const running = new Set<number>()
+
+/** 지금 실행 중인 예약이 하나라도 있으면 true. heartbeat defer 판정용. */
+export function isAnyJobRunning(): boolean {
+  return running.size > 0
+}
+
 /**
  * 스케줄 유효성 + 빈도 상한 검증.
  * 문제 있으면 사용자 안내 문자열, 통과면 null.
@@ -54,8 +70,13 @@ export function nextRunFor(schedule: string, tz: string): Date | null {
   }
 }
 
-/** 예약 하나를 croner에 등록한다(이미 있으면 교체). */
-export function registerCronJob(job: CronJob, runner: CronRunner): boolean {
+/** 예약 하나를 croner에 등록한다(이미 있으면 교체). runner 미설정이면 실패. */
+export function registerCronJob(job: CronJob): boolean {
+  const runner = globalRunner
+  if (runner === null) {
+    logger.warn('CronScheduler', `runner 미설정 - 예약 id=${job.id} 등록 보류`)
+    return false
+  }
   unregisterCronJob(job.id)
   try {
     const cron = new Cron(
@@ -63,6 +84,7 @@ export function registerCronJob(job: CronJob, runner: CronRunner): boolean {
       // protect: 이전 실행이 진행 중이면 중복 실행 방지. unref: 프로세스 종료를 막지 않음.
       { timezone: job.tz, protect: true, unref: true },
       async (self) => {
+        running.add(job.id)
         try {
           await runner(job)
           await setCronJobRunStatus(job.id, 'ok', self.nextRun())
@@ -74,6 +96,8 @@ export function registerCronJob(job: CronJob, runner: CronRunner): boolean {
             }`
           )
           await setCronJobRunStatus(job.id, 'failed', self.nextRun())
+        } finally {
+          running.delete(job.id)
         }
       }
     )
@@ -100,11 +124,11 @@ export function unregisterCronJob(id: number): void {
 }
 
 /** 부팅 시 DB의 활성 예약을 전부 croner에 재등록한다(진실 원천 = DB). */
-export async function loadAndRegisterAll(runner: CronRunner): Promise<number> {
+export async function loadAndRegisterAll(): Promise<number> {
   const jobs = await listAllEnabledCronJobs()
   let count = 0
   for (const job of jobs) {
-    if (registerCronJob(job, runner)) count += 1
+    if (registerCronJob(job)) count += 1
   }
   logger.info('CronScheduler', `${count}개 예약 등록 완료`)
   return count

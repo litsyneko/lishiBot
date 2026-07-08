@@ -61,6 +61,9 @@ export const toolNameMap: Record<string, string> = {
   get_sticker: '스티커 조회',
   send_sticker: '스티커 전송',
   send_message: '메시지 전송',
+  schedule_task: '작업 예약',
+  list_scheduled_tasks: '예약 목록',
+  cancel_scheduled_task: '예약 취소',
 }
 
 /**

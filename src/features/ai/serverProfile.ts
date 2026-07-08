@@ -276,3 +276,60 @@ export async function formatServerContextForPrompt(
   if (lines.length === 0) return ''
   return `[서버 설정]\n${lines.join('\n')}`
 }
+
+// ── 온보딩 거부 숨김 (2h/24h는 agent_scope에 영속, next_chat은 RAM) ──
+
+const ONBOARDING_DISMISSED_KEY = 'onboardingDismissedUntil'
+
+/** agent_scope에 저장된 온보딩 숨김 만료 시각(epoch ms). 없으면 null. */
+export function getOnboardingDismissedUntil(
+  profile: ServerProfile
+): number | null {
+  const raw = profile.agentScope[ONBOARDING_DISMISSED_KEY]
+  return typeof raw === 'number' ? raw : null
+}
+
+/** 온보딩 숨김 만료 시각을 저장한다(agent_scope 병합, 다른 scope 값 보존). */
+export async function setOnboardingDismissedUntil(
+  guildId: string,
+  until: number
+): Promise<void> {
+  const profile = await getServerProfile(guildId)
+  await upsertServerProfile(guildId, {
+    agentScope: { ...profile.agentScope, [ONBOARDING_DISMISSED_KEY]: until },
+  })
+}
+
+// ── Heartbeat(자동 발화) 설정 — agent_scope에 저장, 기본 OFF ──
+
+export type HeartbeatConfig = {
+  readonly enabled: boolean
+  readonly channelId: string | null
+}
+
+const HEARTBEAT_KEY = 'heartbeat'
+const DEFAULT_HEARTBEAT: HeartbeatConfig = { enabled: false, channelId: null }
+
+/** agent_scope에서 heartbeat 설정을 꺼낸다. 기본은 OFF(자동 발화 안 함). */
+export function getHeartbeatConfig(profile: ServerProfile): HeartbeatConfig {
+  const raw = profile.agentScope[HEARTBEAT_KEY]
+  if (raw !== null && typeof raw === 'object' && !Array.isArray(raw)) {
+    const obj = raw as Record<string, unknown>
+    return {
+      enabled: obj.enabled === true,
+      channelId: typeof obj.channelId === 'string' ? obj.channelId : null,
+    }
+  }
+  return DEFAULT_HEARTBEAT
+}
+
+/** heartbeat 설정을 저장한다(agent_scope 병합, 다른 scope 값 보존). */
+export async function setHeartbeatConfig(
+  guildId: string,
+  config: HeartbeatConfig
+): Promise<void> {
+  const profile = await getServerProfile(guildId)
+  await upsertServerProfile(guildId, {
+    agentScope: { ...profile.agentScope, [HEARTBEAT_KEY]: config },
+  })
+}

@@ -71,8 +71,9 @@
 | 5 | 한국어 명령어 (`/에이전트` 5종 + 승인 정책 DB 배선) | ✅ 완료 (D-5) |
 | 6-1 | standing orders (agent_scope + 프롬프트 주입 + `/에이전트 설정_지침`) | ✅ 완료 (D-7) |
 | — | 세션/주입 구멍 A(신규멘션 채널키)·B(server_profile 주입) 수정 | ✅ 완료 (D-7) |
-| 6-2 | cron 기반 (croner + 022 + cronStore + cronScheduler) | 🔨 진행 (D-8) · 실행부/도구 미완 |
-| 6-3 | heartbeat | ⏸ 대기 (발화범위 확인 필요) |
+| 6-2 | cron 전체 (기반 + 실행부 + 예약 도구 3종) | ✅ 완료 (D-8/D-9) |
+| 6-3 | heartbeat (폴링/5중 게이트/발화/명령어, 기본 OFF) | ✅ 완료 (D-9) |
+| — | 온보딩 dismiss DB영속 (칸나 리스크 3) | ✅ 완료 (D-9) |
 
 ---
 
@@ -265,11 +266,32 @@ Supabase MCP(`apply_migration`)로 `021_ai_agent_sessions.sql`을 원격 프로�
 
 ---
 
+## D-9. 6-2 cron 실행부·도구 + 6-3 heartbeat + 온보딩 dismiss 영속 (2026-07-08)
+
+**6-2 cron 완결**
+- 실행부 `runScheduledJob`(AiMentionExtension): 예약 시각 → 저장된 요청으로 AI 턴 → 결과 채널 전송. `buildToolDefinitions`를 message→context 기반으로 리팩터해 멘션/답장/cron 세 경로가 공유(기존 두 경로 동작 보존). `sendApprovalCards`는 콜백화(멘션·답장=답장, cron=채널 전송). 등록자 권한으로 도구 노출, danger는 실행 시점 승인 카드(사람 없으면 TTL 만료 = fail-safe).
+- 예약 도구 3종 `scheduleTools.ts`: `schedule_task`/`list_scheduled_tasks`/`cancel_scheduled_task`. 등록은 requireManageGuild, 빈도 5분. `cronScheduler`를 전역 runner 방식으로 바꿔 도구가 즉시 croner 등록.
+- 부팅: `setCronRunner` + `loadAndRegisterAll`.
+
+**6-3 heartbeat (기본 OFF)**
+- 30분 폴링(`runHeartbeat`) → 5중 게이트(OFF / 조용시간 23~8시 / rate-limit 하루 4회 / cron 실행중 defer / 채널 미지정) → 통과 시 `heartbeatSpeak` AI turn 1회. 폴링 자체는 AI 없이 규칙 체크만.
+- 발화 판단: "먼저 말 걸 이유 없으면 NO_REPLY" → 무발화(exact match). 위험 도구는 승인 카드 그대로.
+- `cronScheduler.isAnyJobRunning()`(RAM)로 cron defer 판정. 발화 후 2시간 쿨다운.
+- `/에이전트 설정_자동말 켜기 채널`로 관리자만 on/off, 끄면 즉시 적용. `agent_scope.heartbeat={enabled,channelId}`.
+- 칸나 리뷰 반영: NO_REPLY exact match, 발화 후 쿨다운 2h.
+
+**온보딩 dismiss 영속 (칸나 리스크 3)**
+- 2h/24h 숨김을 `agent_scope.onboardingDismissedUntil`에 저장(재시작해도 유지). next_chat만 RAM.
+
+*build(tsc)·eslint 통과.*
+
+---
+
 ## E. 다음 할 일 / 주의
 
-- **다음**: 6-2 cron 실행부 + 예약 도구 3종 + 부팅 연결. 그 뒤 6-3 heartbeat(자동 발화 — 착수 전 발화 범위 리시 확인 필요), 온보딩 dismiss DB영속(칸나 리스크 3).
-- ⚠️ **커밋 주의**: 워킹트리에 AI 파일 외 대규모 미커밋(activityLevels/moderation/economy 등 6천 줄+)이 섞여 있음. **AI 파일만** 스테이징.
-- ⚠️ **package.json/pnpm-lock 미커밋**: croner 외에 음성/TTS/욕설필터 의존성(@discordjs/voice, ffmpeg-static, opusscript, badwords-ko, dev:tts 등)이 섞여 있어 AI 커밋에서 제외함. croner 의존성 선언은 그 정리 때 함께 반영 필요(현재 워킹트리엔 설치돼 있음).
-- ⚠️ **마이그레이션 022 미적용**: `022_cron_jobs.sql` Supabase 수동 적용 필요(코드는 없어도 무동작 fallback).
+- **증축 계획 6단계 전부 구현 완료.** 남은 건 배포/검증:
+- ⚠️ **마이그레이션 022 미적용**: `022_cron_jobs.sql` Supabase 수동 적용 필요. 안 하면 예약이 "저장 실패"로 응답(코드는 무동작 fallback).
+- ⚠️ **런타임 스모크 미완**: 봇 재시작 후 실제 확인 필요 — 승인 카드 버튼, 온보딩 버튼, 예약 등록→실행, `/에이전트` 명령어, heartbeat on/off. tsc로 안 잡히는 영역.
+- ⚠️ **package.json/pnpm-lock 미커밋**: croner 외 음성/TTS/욕설필터 의존성이 섞여 AI 커밋에서 제외. croner 선언은 그 정리 때 반영(워킹트리엔 설치됨).
 - ⚠️ **커맨드 등록**: `/에이전트` 그룹은 봇 재시작 시 sync.
 - 역할 분담: 초안·검토·리스크 지적은 칸나(동생), 다듬기·최종 확인·마무리는 코하루(언니).
