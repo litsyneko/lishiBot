@@ -715,7 +715,8 @@ export function searchMusicTool(_client: Client): ToolDefinition {
         if (node === undefined) {
           return {
             success: false,
-            message: '현재 사용 가능한 음악 노드가 없어요.',
+            message:
+              '음악 서버가 아직 연결되지 않았거나 일시적으로 사용할 수 없습니다. 관리자에게 Lavalink 상태 확인을 요청해 주세요.',
           }
         }
 

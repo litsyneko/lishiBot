@@ -4,13 +4,17 @@ import type {
 } from '../features/ai/aiPolicy'
 import { assertCanUseAiManagement } from '../features/ai/aiPolicy'
 import type { AiStage } from '../features/ai/animationMessages'
-import { getHistory } from '../features/ai/conversationStore'
+import {
+  formatToolHistoryForPrompt,
+  getHistory,
+} from '../features/ai/conversationStore'
 import { getMemoryStore } from '../features/ai/memoryStore'
 import {
   INTRO_INFO,
   type IntroInfo,
   detectMentionPrompt,
 } from '../features/ai/mentionAi'
+import { formatServerContextForPrompt } from '../features/ai/serverProfile'
 import { KOREAN_SYSTEM_PROMPT } from '../features/ai/systemPrompt'
 import {
   stripThinkTags,
@@ -29,6 +33,8 @@ export type MessageCreateInput = {
   readonly guildName?: string
   readonly channelId: string
   readonly channelName?: string
+  // 길드에 등록된 슬래시 명령어 안내문 (commandCatalog.ts에서 생성)
+  readonly commandCatalog?: string
 }
 
 export type MessageCreateAiConfig = {
@@ -146,7 +152,7 @@ export async function handleMessageCreate(
       : context.message.hasManageGuild
       ? '(권한: 서버 관리자)'
       : '(권한: 일반 유저)'
-    const sessionKey = `${context.message.guildId}:${context.message.userId}`
+    const sessionKey = `${context.message.guildId}:${context.message.channelId}:${context.message.userId}`
     const memoryBlock = await getMemoryStore().formatForPrompt(
       context.message.userId
     )
@@ -157,6 +163,18 @@ export async function handleMessageCreate(
     const enrichedPrompt = memoryBlock + contextHeader
 
     const existingHistory = getHistory(sessionKey)
+    const toolHistoryBlock = formatToolHistoryForPrompt(sessionKey)
+    const serverContextBlock = await formatServerContextForPrompt(
+      context.message.guildId,
+      context.message.channelId
+    )
+    const promptParts = [
+      KOREAN_SYSTEM_PROMPT,
+      context.message.commandCatalog ?? '',
+      serverContextBlock,
+      personalityBlock,
+      toolHistoryBlock,
+    ].filter((part) => part.length > 0)
     const aiPromise = context.ai.provider.generate(
       enrichedPrompt,
       existingHistory,
@@ -164,9 +182,7 @@ export async function handleMessageCreate(
         tools: context.ai.tools,
         maxSteps: 20,
         systemPrompt:
-          personalityBlock.length > 0
-            ? `${KOREAN_SYSTEM_PROMPT}\n\n${personalityBlock}`
-            : undefined,
+          promptParts.length > 1 ? promptParts.join('\n\n') : undefined,
       }
     )
 

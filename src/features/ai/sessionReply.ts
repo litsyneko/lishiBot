@@ -5,12 +5,13 @@ import type {
 } from './aiPolicy'
 import {
   appendToSession,
+  continueSession,
+  formatToolHistoryForPrompt,
   getHistory,
   getOrCreateSession,
-  getSessionByMessage,
-  reviveSession,
 } from './conversationStore'
 import { getMemoryStore } from './memoryStore'
+import { formatServerContextForPrompt } from './serverProfile'
 import { KOREAN_SYSTEM_PROMPT } from './systemPrompt'
 import { stripThinkTags, stripToolCallSyntax } from './thinkStripper'
 
@@ -30,6 +31,8 @@ export type SessionReplyInput = {
   readonly hasManageGuild?: boolean
   readonly isOwner?: boolean
   readonly tools?: readonly ToolDefinitionInput[]
+  // 길드에 등록된 슬래시 명령어 안내문 (commandCatalog.ts에서 생성)
+  readonly commandCatalog?: string
 }
 
 export type SessionReplyResult = {
@@ -57,12 +60,11 @@ export async function handleSessionReply(
   } = input
 
   let sessionKey: string
-  const traced = getSessionByMessage(referencedMessageId)
-  if (traced !== undefined) {
-    sessionKey = traced.sessionKey
-    reviveSession(sessionKey)
+  const continued = continueSession(referencedMessageId)
+  if (continued !== undefined) {
+    sessionKey = continued
   } else {
-    sessionKey = getOrCreateSession(guildId, userId)
+    sessionKey = getOrCreateSession(guildId, input.channelId, userId)
     appendToSession(sessionKey, {
       content: previousBotResponse,
       role: 'assistant',
@@ -88,13 +90,22 @@ export async function handleSessionReply(
   })
 
   const history = getHistory(sessionKey).slice(0, -1) as ChatMessage[]
+  const toolHistoryBlock = formatToolHistoryForPrompt(sessionKey)
+  const serverContextBlock = await formatServerContextForPrompt(
+    guildId,
+    input.channelId
+  )
+  const promptParts = [
+    KOREAN_SYSTEM_PROMPT,
+    input.commandCatalog ?? '',
+    serverContextBlock,
+    personalityBlock,
+    toolHistoryBlock,
+  ].filter((part) => part.length > 0)
   const result = await provider.generate(contextMessage, history, {
     tools: input.tools,
     maxSteps: 20,
-    systemPrompt:
-      personalityBlock.length > 0
-        ? `${KOREAN_SYSTEM_PROMPT}\n\n${personalityBlock}`
-        : undefined,
+    systemPrompt: promptParts.length > 1 ? promptParts.join('\n\n') : undefined,
   })
 
   const cleaned = stripToolCallSyntax(stripThinkTags(result.text))
@@ -115,11 +126,12 @@ export async function handleSessionReply(
 
 export function startSession(
   guildId: string,
+  channelId: string,
   userId: string,
   userPrompt: string,
   botResponse: string
 ): string {
-  const sessionKey = getOrCreateSession(guildId, userId)
+  const sessionKey = getOrCreateSession(guildId, channelId, userId)
   appendToSession(sessionKey, { content: userPrompt, role: 'user' })
   appendToSession(sessionKey, { content: botResponse, role: 'assistant' })
   return sessionKey

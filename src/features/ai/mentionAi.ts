@@ -35,13 +35,15 @@ function detectMention(
   botId: string,
   content: string
 ): MentionInfo | undefined {
-  const mentionPattern = new RegExp(`<@!?${escapeRegExp(botId)}>`, 'u')
+  // 문장 시작의 멘션만 호출로 인정한다. 대화 중간에 봇을 언급만 한 경우
+  // ("메시지 내용 @리시봇 내용")까지 반응하면 오작동으로 느껴진다.
+  const mentionPattern = new RegExp(`^\\s*<@!?${escapeRegExp(botId)}>`, 'u')
   const match = content.match(mentionPattern)
-  if (match === null || match.index === undefined) {
+  if (match === null) {
     return undefined
   }
 
-  const remaining = content.slice(match.index + match[0].length).trim()
+  const remaining = content.slice(match[0].length).trim()
   return { prompt: remaining }
 }
 

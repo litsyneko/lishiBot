@@ -82,12 +82,3 @@ export type ToolRegistry = {
   readonly register: (definition: ToolDefinition) => void
   readonly toFunctionDeclarations: () => ToolFunctionDeclaration[]
 }
-
-// ─── Proposal ───
-
-export type ProposalInfo = {
-  readonly toolName: string
-  readonly args: Record<string, unknown>
-  readonly description: string
-  readonly severity: 'info' | 'warning' | 'danger'
-}

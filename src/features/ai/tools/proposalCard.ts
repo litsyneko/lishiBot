@@ -1,5 +1,11 @@
-import type { ProposalInfo } from './toolTypes'
-import { Colors, EmbedBuilder } from 'discord.js'
+import { SeparatorBuilder, TextDisplayBuilder } from '@discordjs/builders'
+import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  MessageFlags,
+  SeparatorSpacingSize,
+} from 'discord.js'
 
 export const toolNameMap: Record<string, string> = {
   create_channel: '채널 생성',
@@ -57,12 +63,6 @@ export const toolNameMap: Record<string, string> = {
   send_message: '메시지 전송',
 }
 
-const severityColor: Record<ProposalInfo['severity'], number> = {
-  info: Colors.Blue,
-  warning: Colors.Yellow,
-  danger: Colors.Red,
-}
-
 /**
  * Formats a record of arguments into a human-readable Korean string.
  * Each key-value pair becomes "키: 값" on its own line.
@@ -81,29 +81,129 @@ export function formatArgsForEmbed(args: Record<string, unknown>): string {
   return result.length > 1024 ? `${result.slice(0, 1021)}...` : result
 }
 
-/**
- * Builds a discord.js EmbedBuilder that presents an AI tool proposal
- * to the user for confirmation.
- *
- * @param proposal - The proposed tool action details.
- * @returns An EmbedBuilder configured with severity-appropriate styling.
- */
-export function buildProposalEmbed(proposal: ProposalInfo): EmbedBuilder {
-  const displayName = toolNameMap[proposal.toolName] ?? proposal.toolName
+// ─── 승인 카드 버튼 customId ───
 
-  return new EmbedBuilder()
-    .setTitle('🛠️ 제안된 작업')
-    .setDescription(proposal.description)
-    .addFields(
-      { name: '작업', value: displayName, inline: false },
-      {
-        name: '세부 내용',
-        value: formatArgsForEmbed(proposal.args),
-        inline: false,
-      }
-    )
-    .setColor(severityColor[proposal.severity])
-    .setFooter({
-      text: "이 작업을 진행할까요? '네' 또는 '아니요'로 답변해 주세요.",
-    })
+const APPROVAL_CUSTOM_ID_PREFIX = 'aiApproval'
+
+export function buildApprovalCustomId(
+  action: 'approve' | 'deny',
+  proposalId: string
+): string {
+  return `${APPROVAL_CUSTOM_ID_PREFIX}:${action}:${proposalId}`
+}
+
+export function parseApprovalCustomId(
+  customId: string
+): { action: 'approve' | 'deny'; proposalId: string } | undefined {
+  if (!customId.startsWith(`${APPROVAL_CUSTOM_ID_PREFIX}:`)) return undefined
+  const [, action, proposalId] = customId.split(':')
+  if (action !== 'approve' && action !== 'deny') return undefined
+  if (proposalId === undefined || proposalId.length === 0) return undefined
+  return { action, proposalId }
+}
+
+// ─── 승인 카드 (Components V2) ───
+
+function approvalCardBody(
+  toolName: string,
+  args: Record<string, unknown>,
+  requesterId: string,
+  dangerGate: 'admin_only' | 'requester' | 'none'
+): string {
+  const displayName = toolNameMap[toolName] ?? toolName
+  // 결정 주체 문구는 서버 승인 정책과 일치해야 한다(admin_only=관리자, 그 외=요청자).
+  const deciderLine =
+    dangerGate === 'admin_only'
+      ? `관리자만 승인하거나 거부할 수 있어요. (요청자: <@${requesterId}>)`
+      : `요청자(<@${requesterId}>)만 결정할 수 있어요.`
+  return [
+    '⚠️ **승인이 필요한 작업**',
+    `AI가 위험 작업을 실행하려고 해요. ${deciderLine}`,
+    '',
+    `**작업**: ${displayName}`,
+    '**세부 내용**',
+    formatArgsForEmbed(args),
+  ].join('\n')
+}
+
+export type ApprovalCardInput = {
+  readonly toolName: string
+  readonly args: Record<string, unknown>
+  readonly requesterId: string
+  readonly proposalId: string
+  readonly dangerGate: 'admin_only' | 'requester' | 'none'
+}
+
+/** 위험 도구 제안을 사용자에게 보여주는 Components V2 승인 카드([실행 승인]/[거부] 버튼 포함). */
+export function buildApprovalCard(input: ApprovalCardInput): {
+  components: (
+    | TextDisplayBuilder
+    | SeparatorBuilder
+    | ActionRowBuilder<ButtonBuilder>
+  )[]
+  flags: number
+} {
+  const buttons = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(buildApprovalCustomId('approve', input.proposalId))
+      .setLabel('실행 승인')
+      .setStyle(ButtonStyle.Danger),
+    new ButtonBuilder()
+      .setCustomId(buildApprovalCustomId('deny', input.proposalId))
+      .setLabel('거부')
+      .setStyle(ButtonStyle.Secondary)
+  )
+
+  return {
+    components: [
+      new TextDisplayBuilder().setContent(
+        approvalCardBody(
+          input.toolName,
+          input.args,
+          input.requesterId,
+          input.dangerGate
+        )
+      ),
+      new SeparatorBuilder()
+        .setDivider(true)
+        .setSpacing(SeparatorSpacingSize.Small),
+      new TextDisplayBuilder().setContent(
+        '-# 5분 안에 결정하지 않으면 만료돼요.'
+      ),
+      buttons,
+    ],
+    flags: MessageFlags.IsComponentsV2,
+  }
+}
+
+export type ResolvedApprovalCardInput = {
+  readonly toolName: string
+  readonly args: Record<string, unknown>
+  readonly requesterId: string
+  readonly statusLine: string
+  readonly dangerGate: 'admin_only' | 'requester' | 'none'
+}
+
+/** 결정이 끝난 승인 카드 — 버튼을 제거하고 처리 결과 상태줄로 치환한다. */
+export function buildResolvedApprovalCard(input: ResolvedApprovalCardInput): {
+  components: (TextDisplayBuilder | SeparatorBuilder)[]
+  flags: number
+} {
+  return {
+    components: [
+      new TextDisplayBuilder().setContent(
+        approvalCardBody(
+          input.toolName,
+          input.args,
+          input.requesterId,
+          input.dangerGate
+        )
+      ),
+      new SeparatorBuilder()
+        .setDivider(true)
+        .setSpacing(SeparatorSpacingSize.Small),
+      new TextDisplayBuilder().setContent(input.statusLine),
+    ],
+    flags: MessageFlags.IsComponentsV2,
+  }
 }

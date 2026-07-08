@@ -1,0 +1,275 @@
+# lishibot 에이전트 증축 — 진행 로그 (tudo-agent-progress)
+
+> 짝 문서: `tudo-agent-plan.md`(설계 청사진). 이 문서는 **회의 결정 + 실제 구현 진행**을 기록한다.
+> 갱신: 2026-07-08 (KST). 충돌 시 결정 사항은 이 문서, 설계 근거는 plan 문서 기준.
+
+---
+
+## A. 프로젝트 정의 (확정)
+
+- **대상**: FullMoon 디스코드 도우미 에이전트(코하루/칸나). 메인 길드 `1440598081648328816`.
+- **범위**: **디스코드 내 작업만.** 프로젝트 코드 작업은 대상 아님.
+- **UX 언어**: 사용자 노출은 전부 한국어(온보딩·응답·버튼·설명).
+- **허용 유저**: 리시, 설연.
+- **접근 방침**: 밑바닥 재작성 아님 → **증축**. `providerCore` 추출부터.
+
+---
+
+## B. 회의 확정 결정 (2026-07-08)
+
+### 구조·순서
+- **자율성(cron/heartbeat)을 앞에 두지 않는다.** 상태 영속화 · 승인 게이트 · rate-limit이 먼저.
+- **확정 구현 순서**:
+  1. 데이터 모델 (`server_profile` + agent self model + 권한 판정)
+  2. 세션 DB (`guild:channel:user` 채널 키, 테이블 없으면 RAM fallback)
+  3. 승인 게이트 (`onToolExecutionStart/End`로 위험 도구 직전 차단, 세션 삭제·채널 orphan 흡수)
+  4. 온보딩 (서버 컨셉·권한·채널 용도·승인 정책 안내)
+  5. 한국어 명령어 (`/에이전트` 서브커맨드 그룹, 각 authz 게이트)
+  6. 자율성 (standing orders/rate-limit → cron → heartbeat)
+
+### 세션
+- **기존 RAM 세션은 전면 폐기.** 남길 대화 기록 없음(RAM Map뿐) → 호환 레이어·`messageIdToSession` 브리지 불필요.
+- 처음부터 `guild:channel:user` 채널 키로 **클린 구축**.
+- 만료 이원화: `session_started_at`(daily/KST 롤오버) + `last_interaction_at`(idle 2h).
+
+### 승인·권한
+- **승인 게이트가 온보딩보다 먼저.** 온보딩 중에도 위험 작업이 나올 수 있음.
+- 프로필 없을 때 **안전 기본값 하드코딩**: 위험 도구는 무조건 관리자 승인. 온보딩이 이를 덮어씀.
+- `onStepEnd`는 관측용으로만 충분, 승인 개입엔 부족 → `onToolExecutionStart/End` 필요.
+- 권한은 신규 구축 불필요. `permissionCheck.ts`의 3계층(`requireAdmin`/`requireManageGuild`/`runtimeCheck`) 재사용.
+- 위험 작업 UI는 Component v2 승인 카드. 세션 삭제·채널 orphan 처리도 승인 게이트 레인에 흡수.
+
+### 온보딩
+- 관리자 첫 진입 시 안내. 거부하면 2시간 / 24시간 / 다음 채팅까지 숨김.
+
+### 자동화 아키텍처
+- 자동화는 **자식 프로세스 worker**. 메인 봇이 권한·발화 통제.
+- **통신: 신호는 IPC, 상태(작업 원장)는 DB.** = "실행은 IPC, 진실은 DB". worker 크래시 시 작업 유실 방지.
+- cron: 인프로세스 `croner`가 실행 엔진, **진실 원천은 DB `cron_jobs`**. 부팅 시 DB에서 읽어 재등록.
+- cron 샌드박스 원칙(plan §2 참조): 시스템 스케줄러 금지, 안전 액션 카탈로그(`kind` 화이트리스트)만, 실행 시 승인 게이트 통과, 등록은 관리자 한정.
+
+### 인프라
+- **DB는 Supabase Postgres 전용.** SQLite 도입 안 함(의존성조차 없음, DB 이원화 방지).
+- 마이그레이션 **자동 러너 없음** → 수동 Supabase 적용. 그래서 "테이블 없으면 RAM fallback"이 필수.
+- pgvector 차원 **하드코딩 금지**. `vector(1536)` 고정하지 말고 임베딩 모델 확정 후 별도 마이그레이션.
+
+### 용어
+- "티켓" → **"작업"**.
+
+---
+
+## C. 구현 진행 상태
+
+| 단계 | 내용 | 상태 |
+|---|---|---|
+| 1 | provider 통합 (`providerCore.ts` 추출, 동작 동일성) | ✅ 완료 (build/eslint 통과) |
+| 2 | `toolHistory` read 연결 | ✅ 완료 |
+| — | 데이터 모델 `021_ai_agent_sessions.sql` (`ai_sessions`/`ai_session_messages`/`server_profile`) | ✅ 완료 · **Supabase 실적용 완료(2026-07-08)** (pgvector 하드코딩 제외) |
+| 4 | 세션 DB write-through + 채널 키 + RAM fallback | ✅ 완료 (아래 D) · 재점검 통과, 롤오버 우회 패치 완료 (D-2) |
+| 3 | 승인 게이트 (위험 도구 `execute` 래핑으로 실행 직전 차단) | ✅ 완료 (D-3) · 적대 리뷰 통과, 정리 2건 조치 |
+| 4a | 온보딩 (서버 프로필 로더 + 관리자 첫 진입 안내 + 거부 숨김) | ✅ 완료 (D-4) |
+| 5 | 한국어 명령어 (`/에이전트` 5종 + 승인 정책 DB 배선) | ✅ 완료 (D-5) |
+| 6-1 | standing orders (agent_scope + 프롬프트 주입 + `/에이전트 설정_지침`) | ✅ 완료 (D-7) |
+| — | 세션/주입 구멍 A(신규멘션 채널키)·B(server_profile 주입) 수정 | ✅ 완료 (D-7) |
+| 6-2 | cron 기반 (croner + 022 + cronStore + cronScheduler) | 🔨 진행 (D-8) · 실행부/도구 미완 |
+| 6-3 | heartbeat | ⏸ 대기 (발화범위 확인 필요) |
+
+---
+
+## D. 4번 세션 DB — 완료 상세
+
+**변경 파일**: `conversationStore.ts`, `sessionReply.ts`, `AiMentionExtension.ts`
+
+- RAM Map → Postgres write-through 캐시. 세션 키 `guild:channel:user`.
+- 쓰기는 fire-and-forget, 세션별 persist 직렬화 체인으로 upsert→insert 순서 보장(FK 위반 방지).
+- 부팅 시 `loadAiSessions()`로 idle TTL 안쪽 세션 복원.
+- 테이블 부재(42P01) 시 조용히 RAM fallback.
+
+**검토(칸나) 반영 3건**:
+1. **연속 실패 카운터** — `logDbFailure`가 실제 DB 실패를 카운트, 임계치 5회 넘으면 `logger.error` 한 번만 올리고 이후 조용히. 성공 시 리셋. 42P01·예외 경로 포함.
+2. **롤오버 시 무조건 새 세션** — `rolledOver`면 이어갈 스레드가 있어도 새 세션. 자정 넘으면 새 대화.
+3. **`persistSessionMeta` 분리** — 생성 시점만 full upsert. 매 turn은 `touchSessionMeta`(last_interaction_at 한 컬럼), 도구 실행 시만 `persistToolHistory`(tool_history JSON). 순서 민감해 debounce/skip 미사용.
+
+*build(tsc)·eslint 모두 통과 확인.*
+
+---
+
+## D-2. 재점검 결과 + 롤오버 패치 (2026-07-08)
+
+세션 복원 직후, 완료 주장(1/2/데이터모델/4)을 병렬 에이전트로 코드 대조. **작업 위치 확정: 이전 AI 작업은 전부 메인 리포(`~/lishibot`) `main` 브랜치에 미커밋 상태 → 여기서 직접 이어감** (이 워크트리엔 없음).
+
+**검증 판정:**
+- **1 providerCore + onStepEnd**: ✅ 확인. 공통 로직(`toModelMessages`/`buildZodSchema`/`buildToolsParam`/`extractToolRecords`/`runGenerate`) 집약, 두 프로바이더는 얇은 래퍼, `onStepEnd`(providerCore.ts:152) 연결, `stepCountIs(20)` 유지. **단 `onStepEnd`는 관측 전용** → 3번은 도구 `execute` 래핑으로 실행 직전 차단해야 함(계획서 예고대로).
+- **2 toolHistory read**: ✅ 확인 (`getToolHistory`→`formatToolHistoryForPrompt`→promptParts 주입).
+- **데이터 모델 021**: ✅ 확인. `server_profile` 포함, pgvector 하드코딩 없음, 스케치보다 엄격(NOT NULL/인덱스/RLS).
+- **4 세션 DB**: ⚠️→✅. 메인 주장·검토반영3 완전 확인. 발견된 흠 2건:
+  1. **🟡 롤오버 우회** — 답장-추적 경로(`sessionReply` `getSessionByMessage`→`reviveSession`)가 자정 KST 롤오버를 건너뜀. → **패치 완료** ↓
+  2. **🟢 실패 카운터 로그 문구** — 임계치 후 `error` 재알림만 억제되고 `logger.warn`(conversationStore.ts:78)은 매 실패 지속. 주석 "그 뒤엔 다시 조용히"와 불일치. **기능 결함 아님 → 미룸**(4번 마무리 시 주석/로그 정리).
+- **빌드/린트**: ✅ tsc·eslint exit 0.
+
+**롤오버 패치 (완료):**
+- `conversationStore.ts`에 `continueSession(referencedMessageId)` 신설: 추적 세션이 같은 KST 날짜면 revive 후 sessionKey 반환, 자정 넘겼으면 `deleteSession` 후 `undefined` → 호출자가 새 세션 생성(getOrCreateSession 롤오버 경로와 동일 규율).
+- `reviveSession`(void)은 **그대로 유지** — `AiMentionExtension.ts:347` 위험도구 확인-실행 경로가 쓰고 있고, 그 경로는 3번에서 재작업할 코드라 건드리지 않음.
+- `sessionReply.ts`는 `getSessionByMessage`+`reviveSession` 대신 `continueSession` 사용. build/lint 통과.
+
+---
+
+## D-3. 3번 승인 게이트 — 구현 완료 (2026-07-08)
+
+**착수 전 매핑에서 확인된 사실**: 승인 흐름의 ~90%가 이미 "죽은 스캐폴딩"으로 존재했음.
+- `pendingProposals` Map은 `.get()`/`.delete()`만 있고 **`.set()`이 리포 전체에 0건** → 확인 블록(confirmWords "네/응" → L3 재검 → 직접 execute) 전체가 도달 불가 죽은 코드 (**B1 버그 확정**).
+- `ToolPermission.risk`(`info`/`warning`/`danger`)가 **53개 도구 전부에 채워져 있으나 읽는 코드 0건**. danger ~10개(delete_channel/ban/kick/delete_role/set_role_permissions 등).
+- `buildProposalEmbed` 승인 카드도 정의만 있고 호출부 0건.
+- 유일한 살아있는 게이트는 도구 "노출 필터"(buildToolDefinitions의 L3 사전검사)뿐 — 노출된 danger 도구는 모델이 루프 안에서 확인 없이 즉시 실행.
+- SDK 제약: `generateText` 자율 멀티스텝 루프라 execute 안에서 사람 승인을 await 불가 → "루프 내 보류 + 루프 밖 후속 실행" 구조가 유일하게 안전.
+
+**확정 정책 (리시, 2026-07-08)**:
+1. **danger만 게이트** — warning/info는 기존대로 즉시 실행 (온보딩에서 정책으로 조정 가능).
+2. **V2 카드 + 버튼** — [실행 승인](빨강)/[거부](회색). 답장-confirmWords 방식 폐기(오탐 위험).
+3. **요청자 본인만 결정 + 승인 시점 L3 재검**(관리자 요건) — "위험 도구는 무조건 관리자 승인" 충족.
+
+**구현 (신규 1 + 개편 2)**:
+- **`src/features/ai/approvalGate.ts` (신규)** — `ProposalCollector`: danger 도구 호출을 가로채 실행하지 않고 제안 기록(`ApprovalProposal`, UUID id), 모델에는 `success:true` + "보류했어요, 재시도 말고 사용자에게 버튼 안내" sentinel 반환(재시도 루프 방지). 같은 (도구,인자) 중복 제안 dedupe. `drain()`으로 generate 종료 후 수거. `APPROVAL_TTL_MS` 5분.
+- **`src/features/ai/tools/proposalCard.ts` (개편)** — 죽은 `buildProposalEmbed`/`severityColor` 제거. Components V2 승인 카드 `buildApprovalCard`(본문+구분선+안내+버튼 ActionRow), 처리 후 카드 `buildResolvedApprovalCard`(버튼 제거+상태줄). customId `aiApproval:approve|deny:<uuid>` 빌드/파싱. `toolNameMap`/`formatArgsForEmbed` 재사용.
+- **`src/modules/AiMentionExtension.ts` (배선)**:
+  1. `buildToolDefinitions`에 collector 파라미터 추가, execute 래퍼에서 `risk==='danger'`면 `collector.propose()` (초크포인트 인터셉트 — 멘션/답장 두 경로 모두 통과).
+  2. generate 종료 후 `sendApprovalCards()`: 제안별 V2 카드 전송 → `pendingApprovals.set(proposalId, proposal)` (**B1 해소** — 이제 맵이 실제로 채워짐).
+  3. `@listener interactionCreate` 버튼 핸들러: customId 파싱 → 제안 조회(없으면 ephemeral "만료/처리됨") → **요청자 본인 검증** → **맵에서 먼저 delete(더블클릭/중복 소비 방지)** → deny면 카드 상태 치환 → TTL 검사 → `toolRegistry.get` → **승인 시점 권한으로 L3 재검** → 카드 "승인됨" 치환 → **루프 밖 `toolDef.execute`** → 세션 기록(`getOrCreateSession` 경유로 롤오버 규율 준수) + `appendToToolHistory` + followUp 결과 메시지(세션 바인딩).
+  4. 죽은 confirmWords 블록(~122줄) 제거, 미사용 `reviveSession` import 정리.
+
+**동작 흐름 요약**: 모델이 danger 도구 호출 → 루프 안에서 보류 + 모델이 사용자에게 안내 → 봇이 승인 카드 전송 → 요청자가 [실행 승인] 클릭 → L3 재검 통과 시 실행 → 결과 메시지(답장으로 대화 이어가기 가능).
+
+*build(tsc)·eslint 통과.*
+
+**적대 리뷰 완료 (4렌즈, 2026-07-08):**
+
+1. **우회 가능성** — ✅ 안전. danger 도구는 `buildToolDefinitions`의 execute 래퍼(L138)에서 `risk === 'danger'` 체크로 가로채며, 멘션/답장 두 경로 모두 동일 래퍼 사용. 직접 `toolDef.execute`를 호출하는 경로는 승인 버튼 핸들러(L585)뿐이고, 승인 시점 L3 재검(L569-578)을 거침. 우회 경로 없음.
+2. **버튼 상태머신** — ✅ 안전. 맵 delete를 승인/거부 결정 전에 선행(L524) → 더블클릭/동시클릭 레이스 방지. 두 번째 클릭은 L493에서 "이미 처리됐거나 만료" ephemeral. TTL 만료 검사 L551 존재. `interaction.update()` → `followUp()` 순서는 discord.js 14.26에서 유효(update=원본 수정 응답, followUp=webhook 추가 메시지).
+3. **에이전트 루프 의미론** — 🟡 경미. sentinel이 `success:true`로 toolHistory에 남음 → 다음 턴 `formatToolHistoryForPrompt`에서 "danger_tool (성공) result=보류했어요..." 형태로 주입. 모델이 "성공적으로 보류됨"으로 읽으므로 실질적 혼동 낮음. 승인 후 실제 실행이 별도 appendToToolHistory(L597-604)로 기록되어 상태 추적 가능. → **미룸** (개선: formatToolHistoryForPrompt에서 보류 sentinel 구분 표시, 우선순위 낮음).
+4. **회귀** — ✅ 안전. `buildProposalEmbed`/`severityColor` 참조 0건(moderationActions의 severityColor는 무관). `confirmWords` 참조 0건. customId `aiApproval:` prefix는 다른 Extension(`ctrl:`, `drop_`, `server_log_` 등)과 겹치지 않음.
+
+**리뷰 후 정리 조치 (2건, build/lint 통과):**
+- `toolTypes.ts`의 `ProposalInfo` 타입 제거 — 카드 개편으로 소비처 전부 소멸, `ApprovalProposal`(approvalGate.ts)이 대체.
+- `conversationStore.ts`에서 `reviveSession` export 제거 — 외부 import 0건, 내부에서 `continueSession`만 사용. public API 축소.
+
+---
+
+## D-4. 4번 온보딩 — 서버 프로필 로더 + 관리자 온보딩 안내 (2026-07-08)
+
+**신규 파일 3개**:
+
+- **`src/features/ai/serverProfile.ts`** — 서버 프로필 로더 + RAM 캐시(10분 TTL).
+  - `getServerProfile(guildId)`: 캐시 → DB → 하드코딩 기본값 fallback. 절대 throw하지 않음.
+  - `upsertServerProfile(guildId, partial)`: 부분 업데이트 → RAM 캐시 + DB.
+  - `ApprovalPolicy` 타입: `dangerGate: 'admin_only' | 'requester' | 'none'`. 기본값 `admin_only` (하드코딩 안전기본값과 동일).
+  - 테이블 부재(42P01) 시 기본값 반환 (기존 `logDbFailure` 패턴 준수).
+
+- **`src/features/ai/onboarding.ts`** — 온보딩 상태 추적 + 거부 숨김.
+  - `shouldShowOnboarding(guildId, isAdmin)`: 관리자 + 미온보딩 + 미숨김이면 `'show'`.
+  - `dismissOnboarding(guildId, duration)`: RAM-only 숨김. `2h`/`24h`(시간 기반 만료) / `next_chat`(다음 messageCreate에서 해제).
+  - 거부 상태는 **의도적으로 RAM-only** — 봇 재시작 시 리셋되어 미온보딩 서버에 다시 안내.
+
+- **`src/features/ai/onboardingCard.ts`** — Components V2 온보딩 카드.
+  - `buildOnboardingCard(guildId)`: 환영 + 기능 소개 + 4버튼([온보딩 완료]/[2시간 뒤에]/[오늘 안 볼래요]/[닫기]).
+  - customId: `aiOnboarding:start|dismiss2h|dismiss24h|dismissChat:<guildId>` (다른 Extension과 충돌 없음).
+  - `buildOnboardingResolvedCard(statusLine)`: 결정 후 버튼 제거 + 상태줄 치환.
+
+**배선 (`AiMentionExtension.ts`)**:
+  1. `messageCreate` — AI 응답 완료 후(응답을 막지 않음) `shouldShowOnboarding` 체크 → `'show'`이면 온보딩 카드를 추가 메시지로 전송.
+  2. `onboardingInteraction` — `aiOnboarding:` 버튼 핸들러. 관리자 검증 → `start`(DB upsert `onboarded_at`+완료 카드) / `dismiss*`(RAM 숨김+상태 카드).
+
+**설계 결정**:
+- 온보딩은 AI 응답을 **막지 않는다** — 추가 안내 메시지로만 전송.
+- 이번 단계에서 `start`는 단순히 `onboarded_at` 기록 + 완료 카드. 세부 세팅(서버 컨셉·채널 용도 등)은 `/에이전트 설정` 명령어 단계에서.
+- `approval_policy` 연결은 타입만 준비. 승인 게이트의 동작은 변경하지 않음(여전히 하드코딩 안전기본값).
+
+*build(tsc)·eslint 통과.*
+
+---
+
+## D-5. 5번 한국어 명령어 — `/에이전트` 그룹 + 승인 정책 DB 배선 (2026-07-08)
+
+**변경 파일**: `conversationStore.ts`(헬퍼 2종), `AiMentionExtension.ts`(커맨드 그룹 + 정책 배선)
+
+**세션 헬퍼 (conversationStore.ts)**:
+- `getActiveSessionsCount(guildId)` — 만료/고아 아닌 활성 세션만 카운트 (`/에이전트 상태`용).
+- `clearSessionsForChannel(guildId, channelId)` — `guild:channel:` prefix 매칭으로 해당 채널 세션 전부 `deleteSession`(DB CASCADE 포함) 후 삭제 수 반환.
+
+**`/에이전트` 서브커맨드 5종 (AdminExtension의 `SubCommandGroup` 패턴)**:
+| 명령어 | 동작 |
+|---|---|
+| `상태` | 활성 세션 수 + 길드별 승인 대기 건수(만료 prune 후) + 프로필 요약(컨셉/정책/채널 용도 최대 5개/온보딩). ephemeral |
+| `설정_컨셉` | `server_profile.concept` 저장 (max 500자, trim 후 빈 값 거부) |
+| `설정_채널` | `channelRoles[channelId]` 설정/제거 (`용도` max 200자, `삭제` Boolean 옵션) |
+| `설정_정책` | `approvalPolicy.dangerGate` 변경 (choices: admin_only/requester/none, none 선택 시 경고 문구) |
+| `세션_초기화` | 현재 채널 세션 전부 삭제, 삭제 수 안내 |
+
+- 전부 `requireServerManager` 게이트. 단 **전역 `applicationCommandInvokeError` 핸들러는 로그만 남기고 사용자 응답이 없음**(Hello.ts:137 확인) → `guardServerManager` 헬퍼가 `CommandAccessError`를 흡수해 ephemeral로 거부 사유 안내 (AdminExtension의 bare-throw 패턴과 의도적으로 다름).
+
+**승인 정책 DB 배선 (하드코딩 → `server_profile.approvalPolicy.dangerGate`)**:
+1. **게이트 진입** — danger 도구 execute 래퍼가 `getServerProfile(guildId)` 조회. `none`이면 게이트 우회 즉시 실행(로그 남김), 그 외엔 기존대로 `collector.propose()`. 프로필 조회 실패 시 `getServerProfile`이 안전 기본값(admin_only)을 반환하므로 fail-safe.
+2. **결정 주체** (D-3 결정 3 "요청자 본인만 결정"을 **정책 기반으로 대체**):
+   - `admin_only`(기본값): **관리자(Administrator) 또는 서버 오너만** 승인/거부 가능. 요청자여도 관리자 아니면 불가.
+   - `requester`: 요청자 본인만 (기존 동작).
+   - `none`: 제안 자체가 안 생기지만, 보류 중 정책이 바뀐 잔여 제안은 requester 규칙으로 처리.
+   - 결정 주체 검사는 맵 delete(단일 소비) **앞**에 위치 — 권한 없는 클릭이 제안을 소비하지 않음.
+   - 승인 시점 L3 재검(클릭자 권한 기준)은 그대로 유지.
+
+*build(tsc)·eslint 통과.*
+
+---
+
+## D-6. 021 마이그레이션 Supabase 실적용 (2026-07-08)
+
+Supabase MCP(`apply_migration`)로 `021_ai_agent_sessions.sql`을 원격 프로젝트에 직접 적용. 사전에 `list_tables`/`list_migrations`로 미적용·무충돌 확인(마이그레이션 이력은 019까지, 020/021 모두 로컬에만 존재 — 021은 신규 테이블만 만들어 020 미적용과 무관).
+
+- 결과: `ai_sessions`(FK 포함) / `ai_session_messages`(`session_key` FK → `ai_sessions`) / `server_profile` 3개 테이블 생성 확인. 컬럼 스키마가 마이그레이션 원본과 정확히 일치, RLS 전부 활성화, 데이터 0건.
+- 보안 어드바이저 `rls_policy_always_true` WARN 3건(신규 테이블마다 1개) — **신규 문제 아님**. 이 리포 기존 테이블 전부(`random_drops`/`moderation_settings` 등)가 쓰는 동일 관례(`FOR ALL USING (true) WITH CHECK (true)`, 봇이 anon key로 서버측에서만 접근)라 조치 불필요.
+- 이제 코드가 RAM fallback이 아니라 **실제 Postgres 세션 영속** 경로로 동작. `020_fix_schema_code_drift.sql`은 여전히 미적용 상태(별개 트랙, AI 기반과 무관).
+
+---
+
+## D-7. 6-1 standing orders + 세션/주입 구멍 2개 (2026-07-08)
+
+**6-1 standing orders (완료)**
+- `serverProfile.ts`: `agent_scope`(JSONB) 재사용 → 새 마이그레이션 없이 상시 지침 저장. `getStandingOrders`/`setStandingOrders`.
+- `formatServerContextForPrompt(guildId, channelId)` — 서버 컨셉 + 이 채널 용도 + 상시 지침을 한 블록으로 프롬프트에 주입.
+- `/에이전트 설정_지침` (추가/조회/초기화, 최대 10개).
+
+**착수 중 발견·수정한 구멍 2개**
+- **A (4번 구멍)** — 신규 멘션 경로(`events/messageCreate.ts`)가 세션을 채널키(`guild:channel:user`)로 저장하면서 읽기(`getHistory`/`toolHistory`)는 옛 `guild:user` 키로 함 → 매 신규 멘션마다 이전 맥락 유실(답장 경로만 정상이라 그동안 안 드러남). 읽기 키를 채널키로 수정.
+- **B (5번 갭)** — `설정_컨셉`/`설정_채널`이 DB 저장만 하고 프롬프트 주입이 없어 AI가 설정을 몰랐음. 멘션·답장 두 경로에 `formatServerContextForPrompt` 주입 배선.
+
+**리스크 1·2 (칸나 검토, 앞서 반영)**
+- 승인 거부를 `appendToToolHistory`로 남겨 모델이 인지(재시도 방지).
+- 승인 카드 문구를 정책(`admin_only`/`requester`)에 맞춰 분기.
+
+*build(tsc)·eslint 통과.*
+
+---
+
+## D-8. 6-2 cron 기반 착수 (2026-07-08)
+
+**모델 재정의 (리시)**: cron은 정적 액션 목록이 아니라 **"유저 요청을 AI가 예약 등록 → 정한 시각에 AI 턴 실행"**. `kind='agent_prompt'`, `payload`에 유저 요청 프롬프트. 실행 시점에도 danger 도구는 승인 게이트(사람 없으면 TTL 만료로 미실행 = fail-safe). 샌드박스 유지 — cron은 임의 코드 못 부르고 등록된 도구만 쓰는 AI 턴을 돌림.
+
+**완료 (빌드 통과)**
+- `croner` 10.0.1 설치.
+- `022_cron_jobs.sql` — 진실 원천 테이블(guild/channel/kind/schedule/payload/tz/created_by/실행상태). **Supabase 미적용**.
+- `cronStore.ts` — DB CRUD(생성/목록/취소/실행상태) + 부팅 로드. 테이블 없으면 무동작 fallback.
+- `cronScheduler.ts` — croner 래핑. 부팅 재등록(`loadAndRegisterAll`), 빈도 상한 5분(`validateSchedule`), 실행부는 `CronRunner` 주입.
+
+**남은 것 (6-2 미완)**
+- 실행부: cron 트리거 → AI 턴 실행(멘션 응답 흐름 재사용) → danger 승인 게이트 → 결과 채널 전송.
+- 예약 도구 3종(예약/목록/취소) — AI가 유저 요청으로 호출. 등록 권한(허용유저/관리자), 조용채널 존중.
+- 부팅 연결(`clientReady`에서 runner 주입) + 관리자 명령어.
+
+---
+
+## E. 다음 할 일 / 주의
+
+- **다음**: 6-2 cron 실행부 + 예약 도구 3종 + 부팅 연결. 그 뒤 6-3 heartbeat(자동 발화 — 착수 전 발화 범위 리시 확인 필요), 온보딩 dismiss DB영속(칸나 리스크 3).
+- ⚠️ **커밋 주의**: 워킹트리에 AI 파일 외 대규모 미커밋(activityLevels/moderation/economy 등 6천 줄+)이 섞여 있음. **AI 파일만** 스테이징.
+- ⚠️ **package.json/pnpm-lock 미커밋**: croner 외에 음성/TTS/욕설필터 의존성(@discordjs/voice, ffmpeg-static, opusscript, badwords-ko, dev:tts 등)이 섞여 있어 AI 커밋에서 제외함. croner 의존성 선언은 그 정리 때 함께 반영 필요(현재 워킹트리엔 설치돼 있음).
+- ⚠️ **마이그레이션 022 미적용**: `022_cron_jobs.sql` Supabase 수동 적용 필요(코드는 없어도 무동작 fallback).
+- ⚠️ **커맨드 등록**: `/에이전트` 그룹은 봇 재시작 시 sync.
+- 역할 분담: 초안·검토·리스크 지적은 칸나(동생), 다듬기·최종 확인·마무리는 코하루(언니).
