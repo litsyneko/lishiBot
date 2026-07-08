@@ -13,6 +13,7 @@ import {
   lookupChannelTool,
   readChannelMessagesTool,
 } from './tools/channelTools'
+import { draftEmbedTool, sendEmbedTool } from './tools/embedTools'
 import {
   createForumTool,
   listForumPostsTool,
@@ -31,6 +32,14 @@ import {
 } from './tools/memberRoleTools'
 import { lookupMemberTool } from './tools/memberTools'
 import { saveMemoryTool } from './tools/memoryTool'
+import {
+  deleteMessageTool,
+  editMessageTool,
+  pinMessageTool,
+  reactMessageTool,
+  searchMessagesTool,
+  unpinMessageTool,
+} from './tools/messageTools'
 import {
   clearQueueTool,
   getMusicStateTool,
@@ -118,6 +127,14 @@ export function createToolRegistry(client: Client): ToolRegistry {
   register(getStickerTool(client))
   register(sendStickerTool(client))
   register(sendMessageTool(client))
+  register(draftEmbedTool(client))
+  register(sendEmbedTool(client))
+  register(editMessageTool(client))
+  register(deleteMessageTool(client))
+  register(pinMessageTool(client))
+  register(unpinMessageTool(client))
+  register(reactMessageTool(client))
+  register(searchMessagesTool(client))
   register(saveMemoryTool)
   register(scheduleTaskTool)
   register(listScheduledTasksTool)
