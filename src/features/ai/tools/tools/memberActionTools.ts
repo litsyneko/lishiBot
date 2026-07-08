@@ -35,7 +35,7 @@ export function timeoutMemberTool(client: Client): ToolDefinition {
     permission: {
       requireManageGuild: true,
       requireAdmin: false,
-      risk: 'warning',
+      risk: 'danger',
     },
     async execute(
       args: Record<string, unknown>,

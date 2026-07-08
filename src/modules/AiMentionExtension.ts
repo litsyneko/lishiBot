@@ -72,6 +72,7 @@ import {
   stripToolCallSyntax,
   toComponentV2,
 } from '../features/ai/thinkStripper'
+import { roleAssignmentIsSensitive } from '../features/ai/tools/helpers/roleRisk'
 import { delayBeforeToolCall } from '../features/ai/tools/helpers/toolDelay'
 import {
   buildApprovalCard,
@@ -81,6 +82,7 @@ import {
 } from '../features/ai/tools/proposalCard'
 import { createToolRegistry } from '../features/ai/tools/toolRegistry'
 import type {
+  ToolDefinition,
   ToolExecutionContext,
   ToolRegistry,
 } from '../features/ai/tools/toolTypes'
@@ -201,7 +203,14 @@ class AiMentionExtensionClass extends Extension {
           // 승인 게이트: danger 도구는 서버 승인 정책(dangerGate)에 따라 처리한다.
           // 프로필 조회 실패 시 getServerProfile이 안전 기본값(admin_only)을 반환하므로
           // 정책을 못 읽어도 게이트가 열리는 방향으로는 절대 무너지지 않는다.
-          if (toolDef.permission.risk === 'danger') {
+          // 역할 부여/회수는 정적 risk가 아니라 대상 역할 권한으로 위험도를 동적 판정한다
+          // (관리 권한 역할=danger, 색깔 역할=warning 즉시 실행).
+          const effectiveRisk = await this.resolveEffectiveRisk(
+            toolDef,
+            args,
+            context
+          )
+          if (effectiveRisk === 'danger') {
             const profile = await getServerProfile(context.guildId)
             if (profile.approvalPolicy.dangerGate !== 'none') {
               logger.info(
@@ -223,6 +232,27 @@ class AiMentionExtensionClass extends Extension {
     }
 
     return result
+  }
+
+  // 도구의 "실효 위험도"를 결정한다. 대부분은 정적 risk 그대로지만,
+  // 역할 부여/회수는 대상 역할의 권한으로 동적 판정한다:
+  // 관리 권한(Administrator/ManageGuild/ManageRoles 등) 포함 역할 → danger(승인),
+  // 색깔·일반 역할 → 정적 warning(즉시 실행). 판정 불가 시 fail-closed로 danger.
+  private async resolveEffectiveRisk(
+    toolDef: ToolDefinition,
+    args: Record<string, unknown>,
+    context: ToolExecutionContext
+  ): Promise<'info' | 'warning' | 'danger' | undefined> {
+    const name = toolDef.declaration.name
+    if (name === 'add_role_member' || name === 'remove_role_member') {
+      const sensitive = await roleAssignmentIsSensitive(
+        this.client,
+        context,
+        args
+      )
+      return sensitive ? 'danger' : toolDef.permission.risk ?? 'warning'
+    }
+    return toolDef.permission.risk
   }
 
   @listener({ event: 'clientReady' })

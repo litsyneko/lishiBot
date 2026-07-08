@@ -66,7 +66,7 @@ export function moveAllMembersTool(client: Client): ToolDefinition {
     permission: {
       requireManageGuild: true,
       requireAdmin: false,
-      risk: 'warning',
+      risk: 'danger',
     },
     async execute(
       args: Record<string, unknown>,
@@ -181,7 +181,7 @@ export function disconnectAllMembersTool(client: Client): ToolDefinition {
     permission: {
       requireManageGuild: true,
       requireAdmin: false,
-      risk: 'warning',
+      risk: 'danger',
     },
     async execute(
       args: Record<string, unknown>,

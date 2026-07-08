@@ -338,6 +338,25 @@ Supabase MCP(`apply_migration`)로 `022_cron_jobs.sql`을 원격 프로젝트에
 
 ---
 
+## D-13. 승인 게이트 위험도 재분류 (2026-07-09)
+
+**배경**: 리시가 `edit_channel`(채널 주제 수정)이 승인 없이 실행되는 걸 지적 → 위험도 분류가 리시 356 원안("역할 권한·역할 배치·채널 권한·채널 배치·채널 수정 = 승인 대상")과 항목별로 어긋난 사례가 더 있는지 전수 재점검. 코하루·칸나 합의로 확정.
+
+**정적 승격 (warning → danger)**:
+- `edit_channel` — 앞선 턴에 이미 danger로 수정(리시 지적 직접 대응).
+- `edit_role`(roleManageTools.ts) — 역할 수정에 권한 변경 포함.
+- `timeout_member`(memberActionTools.ts) — 제재 수단. ban/kick(danger)과 대칭.
+- `move_all_members`/`disconnect_all_members`(voiceBulkTools.ts) — 대량 음성 조작.
+- 확인만: `reorder_role`·`set_role_permissions`·`delete_*`·`ban/kick`은 **이미 danger**. `create_*`류는 되돌리기 쉬워 warning 유지(합의).
+
+**동적 판정 (add_role_member / remove_role_member)**: 전부 danger는 색깔 역할까지 매번 승인이라 과함 → **대상 역할 권한으로 실행 시점 분기**.
+- 신규 `tools/helpers/roleRisk.ts`: `SENSITIVE_ROLE_PERMISSIONS`(Administrator/ManageGuild/ManageRoles/ManageChannels/ManageWebhooks/BanMembers/KickMembers/ManageMessages) 중 하나라도 가진 역할 → danger, 아니면 정적 warning(즉시 실행). `roleAssignmentIsSensitive`가 role_id/role_name을 캐시로 해석, **판정 불가 시 fail-closed(danger)**.
+- `AiMentionExtension.buildToolDefinitions`의 게이트를 정적 `toolDef.permission.risk` 대신 신규 `resolveEffectiveRisk(toolDef, args, context)`로 교체. 이 게이트는 멘션·답장·cron·heartbeat 전 경로가 공유하므로 자동 반영.
+
+**배포**: build/lint exit 0 → pm2 재시작(33회째, 안정, 에러 0). 두 길드 sync 성공, AI 세션 1개 복원. **스모크 잔여**: 관리 권한 역할 부여 시 승인 카드 뜨는지 / 색깔 역할은 즉시 부여되는지 실제 클릭 확인.
+
+---
+
 ## E. 다음 할 일 / 주의
 
 - **증축 계획 6단계 전부 구현 완료.** 남은 건 배포/검증:
