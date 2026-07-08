@@ -255,7 +255,7 @@ Supabase MCP(`apply_migration`)로 `021_ai_agent_sessions.sql`을 원격 프로�
 
 **완료 (빌드 통과)**
 - `croner` 10.0.1 설치.
-- `022_cron_jobs.sql` — 진실 원천 테이블(guild/channel/kind/schedule/payload/tz/created_by/실행상태). **Supabase 미적용**.
+- `022_cron_jobs.sql` — 진실 원천 테이블(guild/channel/kind/schedule/payload/tz/created_by/실행상태). **Supabase 실적용 완료(2026-07-08, D-10)**.
 - `cronStore.ts` — DB CRUD(생성/목록/취소/실행상태) + 부팅 로드. 테이블 없으면 무동작 fallback.
 - `cronScheduler.ts` — croner 래핑. 부팅 재등록(`loadAndRegisterAll`), 빈도 상한 5분(`validateSchedule`), 실행부는 `CronRunner` 주입.
 
@@ -287,11 +287,62 @@ Supabase MCP(`apply_migration`)로 `021_ai_agent_sessions.sql`을 원격 프로�
 
 ---
 
+## D-10. 022 마이그레이션 Supabase 실적용 (2026-07-08)
+
+Supabase MCP(`apply_migration`)로 `022_cron_jobs.sql`을 원격 프로젝트에 직접 적용. 사전 `list_tables`로 `cron_jobs` 미존재 확인(021 테이블 3종은 그대로 유지).
+
+- 결과: `cron_jobs` 테이블 생성. `information_schema.columns`로 14개 컬럼 스키마 검증 — 마이그레이션 원본과 정확히 일치(`id` bigserial PK, `guild_id`/`kind`/`schedule`/`created_by` NOT NULL, `payload`/`tz`/`enabled` DEFAULT, `last_run_status` nullable). RLS 활성 + `Allow all` 정책(리포 기존 관례).
+- 이제 예약(`schedule_task`)이 실제 DB에 저장되고 부팅 시 croner 재등록 경로가 활성화됨(이전엔 "저장 실패" 무동작 fallback).
+- **DB 배포 완료.** 남은 건 런타임 스모크(봇 재시작 필요, §E)와 `package.json`/`pnpm-lock` 정리 커밋뿐.
+
+---
+
+## D-11. 빌드·배포·부팅 스모크 (2026-07-08)
+
+`pnpm build`(tsc, exit 0) → `pm2 restart lishibot`(id 4, `node dist`). 새 pid 64061, 재시작 카운트 28에서 안정(크래시 루프 아님), 에러 로그 무증가(마지막 수정 07:06 = 구 인스턴스).
+
+**부팅 로그로 확인된 것:**
+- `[AI] Gemini + OpenCode Zen 체인 구성 완료` · `Logged in as 리시봇#1780`.
+- 슬래시 명령어 13종 등록에 **`에이전트` 그룹 포함** (두 길드 모두 sync 성공).
+- `[AiSession] 0개 AI 세션 로드 완료` → **021 `ai_sessions` 실연결**(테이블 부재 fallback 아님).
+- `[CronScheduler] 0개 예약 등록 완료` → **022 `cron_jobs` 실연결**(부팅 재등록 경로 정상, 저장 실패 아님).
+- heartbeat는 `clientReady`에서 30분 폴링 setInterval 등록(기본 OFF라 첫 폴링까지 로그 없음 = 정상).
+
+**부팅 스모크 통과.** 남은 건 사람 조작이 필요한 인터랙티브 스모크(§E).
+
+---
+
+## D-12. `/에이전트` UX 개편 — 셋업 패널 + 소울 (2026-07-08)
+
+**리시 피드백**: 평면 서브커맨드 6종(`설정_컨셉`/`설정_채널`/`설정_지침`/`설정_자동말`/`설정_정책`/`세션_초기화`)이 어색함 → **패널 방식**으로. 그리고 에이전트 정의 재확인: *"서버를 이해하고, 내가 누구인지(소울), 스스로 성장하는 에이전트."*
+
+**명령 체계 (확정)**:
+- `/에이전트 셋업` — 설정 패널 하나로 전부 흡수. 에이전트에게 정체성과 서버 이해를 심어주는 곳.
+- `/에이전트 상태` — 읽기 전용 요약(소울·컨셉·지침 수·정책·자동발화·세션·승인대기·예약·채널용도·온보딩). ephemeral.
+- 나머지 서브커맨드 6종 전부 삭제.
+
+**소울(정체성) 신설** — OpenClaw SOUL.md 대응:
+- `serverProfile.ts`: `getSoul`/`setSoul` (`agent_scope.soul`, 새 마이그레이션 불필요).
+- `formatServerContextForPrompt`가 소울을 **맨 앞줄**로 주입("나의 소울(정체성): …") → 멘션·답장·cron·heartbeat 모든 AI 턴에 반영.
+- 남은 축 "스스로 성장"은 plan 기반1(메모리 tier·active recall·dreaming) 트랙 — 다음 증축 후보.
+
+**신규 `agentSettingsPanel.ts`** — 관리로그 패널(serverLogPanel) 관례(ContainerBuilder V2 + `interaction.update`) 준수:
+- 컨테이너 6개: 헤더(상태 요약) / 🪞 정체성·서버 이해(소울·컨셉·지침 + 편집 버튼 4개) / 🛡️ 승인 정책(StringSelect 3택) / 🔔 자동 발화(토글 버튼+채널 선택) / 🗂️ 채널 용도(채널 선택→용도 입력·제거) / 🧹 세션(초기화+새로고침).
+- 자유 텍스트는 **모달**(LabelBuilder 최신 관례 — deprecated ActionRow<TextInput> 아님): 소울(1000자)/컨셉(500자)/지침(300자)/채널용도(200자). 비우면 삭제.
+- 각 조작 **즉시 적용** 후 패널 재렌더(드래프트-저장 아님 — 설정이 독립적이라 즉시 반영이 덜 헷갈림). 승인정책 none이면 패널 강조색 경고색으로.
+- customId: `agentcfg:` / 모달 `agentcfgModal:` (충돌 맵에 추가).
+
+**Extension 배선**: `buildPanelData`/`updatePanel`/`canManagePanel`(컴포넌트·모달용 권한 검사) + `agentConfigInteraction`(컴포넌트)/`agentConfigModal`(모달 제출, `isFromMessage`면 패널 갱신) 리스너 2개. 패널 선택 채널 상태는 `panelSelectedChannel`(guildId 키, RAM).
+
+**배포**: build/lint exit 0 → pm2 재시작(29회째, 안정, 에러 0). 두 길드 커맨드 sync 성공. **`[AiSession] 1개 AI 세션 로드`** — 재시작 전 대화가 DB에서 복원됨(세션 영속 실전 첫 증명).
+
+---
+
 ## E. 다음 할 일 / 주의
 
 - **증축 계획 6단계 전부 구현 완료.** 남은 건 배포/검증:
-- ⚠️ **마이그레이션 022 미적용**: `022_cron_jobs.sql` Supabase 수동 적용 필요. 안 하면 예약이 "저장 실패"로 응답(코드는 무동작 fallback).
-- ⚠️ **런타임 스모크 미완**: 봇 재시작 후 실제 확인 필요 — 승인 카드 버튼, 온보딩 버튼, 예약 등록→실행, `/에이전트` 명령어, heartbeat on/off. tsc로 안 잡히는 영역.
+- ✅ **마이그레이션 022 적용 완료** (2026-07-08, D-10): `cron_jobs` 테이블 생성·스키마 검증 완료. 예약 저장 경로 활성화.
+- ⚠️ **인터랙티브 스모크 잔여**(리시 손 필요): 부팅/명령어등록/DB로더는 확인됨(D-11·D-12). 실제 클릭·발화 확인 필요 — **`/에이전트 셋업` 패널(소울·컨셉·지침 모달, 정책 드롭다운, 자동발화 토글, 채널용도, 세션초기화)**, 승인 카드 [실행 승인]/[거부], 온보딩 버튼, `schedule_task` 예약→정시 실행, heartbeat on 후 발화.
 - ⚠️ **package.json/pnpm-lock 미커밋**: croner 외 음성/TTS/욕설필터 의존성이 섞여 AI 커밋에서 제외. croner 선언은 그 정리 때 반영(워킹트리엔 설치됨).
 - ⚠️ **커맨드 등록**: `/에이전트` 그룹은 봇 재시작 시 sync.
 - 역할 분담: 초안·검토·리스크 지적은 칸나(동생), 다듬기·최종 확인·마무리는 코하루(언니).

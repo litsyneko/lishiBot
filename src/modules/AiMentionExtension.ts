@@ -1,6 +1,18 @@
 import { config } from '../config'
 import { CommandAccessError } from '../domain/errors'
 import { handleMessageCreate } from '../events/messageCreate'
+import {
+  AGENT_CFG_ACTIONS,
+  AGENT_CFG_MODAL_PREFIX,
+  AGENT_CFG_PREFIX,
+  type AgentPanelData,
+  DANGER_GATE_LABELS,
+  buildAgentSettingsPanel,
+  buildConceptModal,
+  buildOrderAddModal,
+  buildRoleModal,
+  buildSoulModal,
+} from '../features/ai/agentSettingsPanel'
 import type { ProviderAdapter } from '../features/ai/aiPolicy'
 import type { ToolDefinitionInput } from '../features/ai/aiPolicy'
 import { createAiProviderChain } from '../features/ai/aiProviderChain'
@@ -29,7 +41,7 @@ import {
   loadAndRegisterAll,
   setCronRunner,
 } from '../features/ai/cronScheduler'
-import type { CronJob } from '../features/ai/cronStore'
+import { type CronJob, listCronJobs } from '../features/ai/cronStore'
 import { createGeminiProvider } from '../features/ai/geminiProvider'
 import {
   dismissOnboarding,
@@ -43,12 +55,13 @@ import {
 import { createOpencodeZenProvider } from '../features/ai/opencodeZenProvider'
 import { checkToolPermissionLayer3 } from '../features/ai/permissions/permissionCheck'
 import {
-  type ApprovalPolicy,
   formatServerContextForPrompt,
   getHeartbeatConfig,
   getServerProfile,
+  getSoul,
   getStandingOrders,
   setHeartbeatConfig,
+  setSoul,
   setStandingOrders,
   upsertServerProfile,
 } from '../features/ai/serverProfile'
@@ -73,15 +86,9 @@ import type {
 } from '../features/ai/tools/toolTypes'
 import { logger } from '../utils/logger'
 import { requireServerManager } from '../utils/permissions'
-import { replyEphemeral, replyPublic } from '../utils/replies'
+import { replyEphemeral } from '../utils/replies'
+import { Extension, SubCommandGroup, listener } from '@pikokr/command.ts'
 import {
-  Extension,
-  SubCommandGroup,
-  listener,
-  option,
-} from '@pikokr/command.ts'
-import {
-  ApplicationCommandOptionType,
   ChatInputCommandInteraction,
   EmbedBuilder,
   type Guild,
@@ -91,6 +98,8 @@ import {
   type MessageCreateOptions,
   MessageFlags,
   MessageReferenceType,
+  type ModalMessageModalSubmitInteraction,
+  type ModalSubmitInteraction,
   PermissionFlagsBits,
 } from 'discord.js'
 
@@ -144,11 +153,7 @@ const agentGroup = new SubCommandGroup({
   description: 'AI 에이전트 상태 확인 및 서버별 설정 관리',
 })
 
-const DANGER_GATE_LABELS: Record<ApprovalPolicy['dangerGate'], string> = {
-  admin_only: '관리자만 승인',
-  requester: '요청자 본인 승인',
-  none: '승인 없이 즉시 실행',
-}
+const MAX_STANDING_ORDERS = 10
 
 // heartbeat(자동 발화) 파라미터
 const HEARTBEAT_POLL_MS = 30 * 60 * 1000 // 30분마다 폴링(게이트 통과 시에만 AI 호출)
@@ -161,6 +166,8 @@ class AiMentionExtensionClass extends Extension {
   private toolRegistry: ToolRegistry | undefined
   // 승인 대기 중인 위험 도구 제안 (proposalId → 제안). 버튼 인터랙션이 소비한다.
   private pendingApprovals = new Map<string, ApprovalProposal>()
+  // `/에이전트 셋업` 패널에서 채널 용도 편집 대상으로 고른 채널 (guildId → channelId)
+  private panelSelectedChannel = new Map<string, string | null>()
   // heartbeat 상태 — 폴링 중복 방지 + 채널별 발화 시각(RAM rate-limit).
   private heartbeatBusy = false
   private readonly heartbeatSpokeAt = new Map<string, number[]>()
@@ -1158,10 +1165,82 @@ class AiMentionExtensionClass extends Extension {
     }
   }
 
+  private async buildPanelData(
+    guildId: string,
+    selectedChannelId: string | null
+  ): Promise<AgentPanelData> {
+    const profile = await getServerProfile(guildId)
+    this.pruneExpiredApprovals()
+    let pendingCount = 0
+    for (const proposal of this.pendingApprovals.values()) {
+      if (proposal.context.guildId === guildId) pendingCount++
+    }
+    return {
+      soul: getSoul(profile),
+      concept: profile.concept,
+      dangerGate: profile.approvalPolicy.dangerGate,
+      heartbeat: getHeartbeatConfig(profile),
+      standingOrders: getStandingOrders(profile),
+      channelRoles: profile.channelRoles,
+      selectedChannelId,
+      activeSessions: getActiveSessionsCount(guildId),
+      pendingApprovals: pendingCount,
+      onboardedAt: profile.onboardedAt,
+    }
+  }
+
+  private async updatePanel(
+    interaction:
+      | MessageComponentInteraction
+      | ModalMessageModalSubmitInteraction,
+    guildId: string
+  ): Promise<void> {
+    const data = await this.buildPanelData(
+      guildId,
+      this.panelSelectedChannel.get(guildId) ?? null
+    )
+    await interaction
+      .update(buildAgentSettingsPanel(data))
+      .catch((err: unknown) => {
+        logger.debug(
+          'AI',
+          `패널 갱신 실패: ${err instanceof Error ? err.message : String(err)}`
+        )
+      })
+  }
+
+  // 컴포넌트/모달 인터랙션용 관리 권한 검사(관리자·서버관리·오너).
+  private canManagePanel(
+    interaction: MessageComponentInteraction | ModalSubmitInteraction
+  ): boolean {
+    return (
+      interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild) ===
+        true ||
+      interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ===
+        true ||
+      interaction.guild?.ownerId === interaction.user.id
+    )
+  }
+
+  @agentGroup.command({
+    name: '셋업',
+    description:
+      '관리자: 에이전트의 정체성(소울)·서버 이해·자율 범위를 설정하는 패널을 엽니다.',
+  })
+  async agentSetup(i: ChatInputCommandInteraction) {
+    if (!(await this.guardServerManager(i))) return
+    const guild = i.guild
+    if (guild === null) return
+
+    this.panelSelectedChannel.set(guild.id, null)
+    const data = await this.buildPanelData(guild.id, null)
+    await i.reply(buildAgentSettingsPanel(data))
+  }
+
   @agentGroup.command({
     name: '상태',
     description:
-      '관리자: AI 에이전트의 세션·승인 대기·프로필 상태를 확인합니다.',
+      '관리자: 에이전트가 지금 무엇을 알고 무엇을 하고 있는지 확인합니다.',
   })
   async agentStatus(i: ChatInputCommandInteraction) {
     if (!(await this.guardServerManager(i))) return
@@ -1176,6 +1255,12 @@ class AiMentionExtensionClass extends Extension {
     for (const proposal of this.pendingApprovals.values()) {
       if (proposal.context.guildId === guild.id) pendingCount++
     }
+
+    const jobs = await listCronJobs(guild.id)
+    const enabledJobs = jobs.filter((job) => job.enabled).length
+    const hb = getHeartbeatConfig(profile)
+    const orders = getStandingOrders(profile)
+    const soul = getSoul(profile)
 
     const channelRoleEntries = Object.entries(profile.channelRoles)
     const channelLines =
@@ -1194,301 +1279,285 @@ class AiMentionExtensionClass extends Extension {
             timeZone: 'Asia/Seoul',
           })})`
         : '미완료'
+    const soulLine =
+      soul !== null
+        ? soul.length > 120
+          ? `${soul.slice(0, 119)}…`
+          : soul
+        : '미설정'
+    const heartbeatLine = hb.enabled
+      ? `켜짐${hb.channelId !== null ? ` (<#${hb.channelId}>)` : ''}`
+      : '꺼짐'
 
     await replyEphemeral(
       i,
       [
         '🤖 **AI 에이전트 상태**',
-        `- 활성 세션: ${activeSessions}개`,
-        `- 승인 대기 작업: ${pendingCount}건`,
+        `- 소울: ${soulLine}`,
         `- 서버 컨셉: ${profile.concept ?? '미설정'}`,
+        `- 상시 지침: ${orders.length}개`,
         `- 위험 작업 승인 정책: ${
           DANGER_GATE_LABELS[profile.approvalPolicy.dangerGate]
         }`,
+        `- 자동 발화: ${heartbeatLine}`,
+        `- 활성 세션: ${activeSessions}개 · 승인 대기: ${pendingCount}건 · 예약: ${enabledJobs}건`,
         '- 채널 용도:',
         channelLines,
         `- 온보딩: ${onboardingLine}`,
+        '',
+        '-# 설정 변경은 `/에이전트 셋업`에서 할 수 있어요.',
       ].join('\n')
     )
   }
 
-  @agentGroup.command({
-    name: '설정_컨셉',
-    description: '관리자: AI 에이전트가 참고할 서버 컨셉을 설정합니다.',
-  })
-  async agentSetConcept(
-    i: ChatInputCommandInteraction,
-    @option({
-      type: ApplicationCommandOptionType.String,
-      name: '내용',
-      description: '서버 컨셉 설명 (예: 게임 커뮤니티, 스터디 서버)',
-      required: true,
-      max_length: 500,
-    })
-    concept: string
-  ) {
-    if (!(await this.guardServerManager(i))) return
-    const guild = i.guild
+  @listener({ event: 'interactionCreate' })
+  async agentConfigInteraction(interaction: MessageComponentInteraction) {
+    if (!interaction.isMessageComponent()) return
+    if (!interaction.customId.startsWith(AGENT_CFG_PREFIX)) return
+    const guild = interaction.guild
     if (guild === null) return
 
-    const trimmed = concept.trim()
-    if (trimmed.length === 0) {
-      await replyEphemeral(i, '컨셉 내용을 입력해 주세요.')
+    if (!this.canManagePanel(interaction)) {
+      await interaction
+        .reply({
+          content: '서버 관리 권한이 있는 사용자만 설정을 바꿀 수 있어요.',
+          flags: MessageFlags.Ephemeral,
+        })
+        .catch(() => undefined)
       return
     }
 
-    await upsertServerProfile(guild.id, { concept: trimmed })
-    await replyPublic(i, `🎨 서버 컨셉을 설정했어요.\n> ${trimmed}`)
-  }
+    const action = interaction.customId.slice(AGENT_CFG_PREFIX.length)
+    const guildId = guild.id
+    const selected = this.panelSelectedChannel.get(guildId) ?? null
 
-  @agentGroup.command({
-    name: '설정_채널',
-    description: '관리자: 채널별 용도를 설정해 AI 에이전트가 참고하게 합니다.',
-  })
-  async agentSetChannel(
-    i: ChatInputCommandInteraction,
-    @option({
-      type: ApplicationCommandOptionType.Channel,
-      name: '채널',
-      description: '용도를 지정할 채널',
-      required: true,
-    })
-    _channel: unknown,
-    @option({
-      type: ApplicationCommandOptionType.String,
-      name: '용도',
-      description: '채널 용도 설명 (예: 공지 전용, 잡담, 봇 명령어)',
-      required: false,
-      max_length: 200,
-    })
-    purpose: string | null,
-    @option({
-      type: ApplicationCommandOptionType.Boolean,
-      name: '삭제',
-      description: 'true면 이 채널의 용도 설정을 제거합니다.',
-      required: false,
-    })
-    remove: boolean | null
-  ) {
-    if (!(await this.guardServerManager(i))) return
-    const guild = i.guild
-    if (guild === null) return
+    try {
+      if (
+        interaction.isStringSelectMenu() &&
+        action === AGENT_CFG_ACTIONS.policy
+      ) {
+        const value = interaction.values[0]
+        if (
+          value === 'admin_only' ||
+          value === 'requester' ||
+          value === 'none'
+        ) {
+          await upsertServerProfile(guildId, {
+            approvalPolicy: { dangerGate: value },
+          })
+        }
+        await this.updatePanel(interaction, guildId)
+        return
+      }
 
-    const channel = i.options.getChannel('채널', true)
-    const profile = await getServerProfile(guild.id)
-    const channelRoles = { ...profile.channelRoles }
+      if (
+        interaction.isChannelSelectMenu() &&
+        action === AGENT_CFG_ACTIONS.hbChannel
+      ) {
+        const channelId = interaction.values[0] ?? null
+        const profile = await getServerProfile(guildId)
+        const hb = getHeartbeatConfig(profile)
+        await setHeartbeatConfig(guildId, {
+          // 채널을 비우면 발화 대상이 없으므로 자동 발화도 끈다.
+          enabled: channelId === null ? false : hb.enabled,
+          channelId,
+        })
+        await this.updatePanel(interaction, guildId)
+        return
+      }
 
-    if (remove === true) {
-      if (channelRoles[channel.id] === undefined) {
-        await replyEphemeral(
-          i,
-          `<#${channel.id}> 채널에는 설정된 용도가 없어요.`
+      if (
+        interaction.isChannelSelectMenu() &&
+        action === AGENT_CFG_ACTIONS.roleChannel
+      ) {
+        this.panelSelectedChannel.set(guildId, interaction.values[0] ?? null)
+        await this.updatePanel(interaction, guildId)
+        return
+      }
+
+      if (!interaction.isButton()) return
+
+      if (action === AGENT_CFG_ACTIONS.hbToggle) {
+        const profile = await getServerProfile(guildId)
+        const hb = getHeartbeatConfig(profile)
+        if (hb.enabled) {
+          await setHeartbeatConfig(guildId, {
+            enabled: false,
+            channelId: hb.channelId,
+          })
+        } else {
+          // 켤 때 채널 미지정이면 패널을 연 채널로 기본 설정.
+          const channelId = hb.channelId ?? interaction.channelId
+          await setHeartbeatConfig(guildId, { enabled: true, channelId })
+        }
+        await this.updatePanel(interaction, guildId)
+        return
+      }
+
+      if (action === AGENT_CFG_ACTIONS.soulEdit) {
+        const profile = await getServerProfile(guildId)
+        await interaction.showModal(buildSoulModal(getSoul(profile)))
+        return
+      }
+
+      if (action === AGENT_CFG_ACTIONS.conceptEdit) {
+        const profile = await getServerProfile(guildId)
+        await interaction.showModal(buildConceptModal(profile.concept))
+        return
+      }
+
+      if (action === AGENT_CFG_ACTIONS.orderAdd) {
+        const profile = await getServerProfile(guildId)
+        if (getStandingOrders(profile).length >= MAX_STANDING_ORDERS) {
+          await interaction.reply({
+            content: `상시 지침은 최대 ${MAX_STANDING_ORDERS}개까지예요. 비운 뒤 다시 추가해 주세요.`,
+            flags: MessageFlags.Ephemeral,
+          })
+          return
+        }
+        await interaction.showModal(buildOrderAddModal())
+        return
+      }
+
+      if (action === AGENT_CFG_ACTIONS.orderClear) {
+        await setStandingOrders(guildId, [])
+        await this.updatePanel(interaction, guildId)
+        return
+      }
+
+      if (action === AGENT_CFG_ACTIONS.roleEdit) {
+        if (selected === null) {
+          await interaction.reply({
+            content: '채널을 먼저 선택해 주세요.',
+            flags: MessageFlags.Ephemeral,
+          })
+          return
+        }
+        const profile = await getServerProfile(guildId)
+        await interaction.showModal(
+          buildRoleModal(selected, profile.channelRoles[selected])
         )
         return
       }
-      delete channelRoles[channel.id]
-      await upsertServerProfile(guild.id, { channelRoles })
-      await replyPublic(i, `🗑️ <#${channel.id}> 채널의 용도 설정을 제거했어요.`)
-      return
-    }
 
-    const trimmed = purpose?.trim() ?? ''
-    if (trimmed.length === 0) {
-      await replyEphemeral(
-        i,
-        '`용도`를 입력하거나, 제거하려면 `삭제` 옵션을 켜 주세요.'
-      )
-      return
-    }
-
-    channelRoles[channel.id] = trimmed
-    await upsertServerProfile(guild.id, { channelRoles })
-    await replyPublic(
-      i,
-      `📌 <#${channel.id}> 채널 용도를 설정했어요.\n> ${trimmed}`
-    )
-  }
-
-  @agentGroup.command({
-    name: '설정_지침',
-    description:
-      '관리자: AI가 이 서버에서 항상 지킬 상시 지침을 추가/조회/초기화합니다.',
-  })
-  async agentStandingOrders(
-    i: ChatInputCommandInteraction,
-    @option({
-      type: ApplicationCommandOptionType.String,
-      name: '추가',
-      description: '새 상시 지침 (예: 공지 채널에서는 잡담하지 말 것)',
-      required: false,
-      max_length: 300,
-    })
-    add: string | null,
-    @option({
-      type: ApplicationCommandOptionType.Boolean,
-      name: '초기화',
-      description: 'true면 등록된 상시 지침을 모두 삭제합니다.',
-      required: false,
-    })
-    reset: boolean | null
-  ) {
-    if (!(await this.guardServerManager(i))) return
-    const guild = i.guild
-    if (guild === null) return
-
-    const profile = await getServerProfile(guild.id)
-    const current = getStandingOrders(profile)
-
-    if (reset === true) {
-      if (current.length === 0) {
-        await replyEphemeral(i, '삭제할 상시 지침이 없어요.')
+      if (action === AGENT_CFG_ACTIONS.roleRemove) {
+        if (selected === null) {
+          await interaction.reply({
+            content: '채널을 먼저 선택해 주세요.',
+            flags: MessageFlags.Ephemeral,
+          })
+          return
+        }
+        const profile = await getServerProfile(guildId)
+        const channelRoles = { ...profile.channelRoles }
+        if (channelRoles[selected] !== undefined) {
+          delete channelRoles[selected]
+          await upsertServerProfile(guildId, { channelRoles })
+        }
+        await this.updatePanel(interaction, guildId)
         return
       }
-      await setStandingOrders(guild.id, [])
-      await replyPublic(i, '🧹 상시 지침을 모두 삭제했어요.')
-      return
-    }
 
-    const trimmed = add?.trim() ?? ''
-    if (trimmed.length === 0) {
-      if (current.length === 0) {
-        await replyEphemeral(
-          i,
-          '등록된 상시 지침이 없어요. `추가` 옵션으로 지침을 넣어 주세요.'
-        )
+      if (action === AGENT_CFG_ACTIONS.sessionClear) {
+        const cleared = clearSessionsForChannel(guildId, interaction.channelId)
+        await this.updatePanel(interaction, guildId)
+        await interaction
+          .followUp({
+            content:
+              cleared === 0
+                ? '이 채널에는 초기화할 AI 세션이 없어요.'
+                : `🧹 이 채널의 AI 세션 ${cleared}개를 초기화했어요. 다음 멘션부터 새 대화로 시작해요.`,
+            flags: MessageFlags.Ephemeral,
+          })
+          .catch(() => undefined)
         return
       }
-      const list = current.map((o, idx) => `${idx + 1}. ${o}`).join('\n')
-      await replyEphemeral(i, `📋 현재 상시 지침\n${list}`)
-      return
-    }
 
-    const MAX_ORDERS = 10
-    if (current.length >= MAX_ORDERS) {
-      await replyEphemeral(
-        i,
-        `상시 지침은 최대 ${MAX_ORDERS}개까지예요. \`초기화\` 후 다시 추가해 주세요.`
+      if (action === AGENT_CFG_ACTIONS.refresh) {
+        await this.updatePanel(interaction, guildId)
+        return
+      }
+    } catch (err) {
+      logger.error(
+        'AI',
+        `에이전트 셋업 패널 오류: ${
+          err instanceof Error ? err.message : String(err)
+        }`
       )
-      return
     }
-    await setStandingOrders(guild.id, [...current, trimmed])
-    await replyPublic(i, `📌 상시 지침을 추가했어요.\n> ${trimmed}`)
   }
 
-  @agentGroup.command({
-    name: '설정_자동말',
-    description:
-      '관리자: AI가 먼저 말 거는 자동 발화를 켜거나 끕니다. 기본은 꺼짐.',
-  })
-  async agentSetHeartbeat(
-    i: ChatInputCommandInteraction,
-    @option({
-      type: ApplicationCommandOptionType.Boolean,
-      name: '켜기',
-      description: 'true면 자동 발화 켜기, false면 끄기',
-      required: true,
-    })
-    enable: boolean,
-    @option({
-      type: ApplicationCommandOptionType.Channel,
-      name: '채널',
-      description: '자동 발화할 채널 (켤 때 지정, 생략 시 현재 채널)',
-      required: false,
-    })
-    _channel: unknown
-  ) {
-    if (!(await this.guardServerManager(i))) return
-    const guild = i.guild
+  @listener({ event: 'interactionCreate' })
+  async agentConfigModal(interaction: ModalSubmitInteraction) {
+    if (!interaction.isModalSubmit()) return
+    if (!interaction.customId.startsWith(AGENT_CFG_MODAL_PREFIX)) return
+    const guild = interaction.guild
     if (guild === null) return
 
-    if (!enable) {
-      const profile = await getServerProfile(guild.id)
-      const hb = getHeartbeatConfig(profile)
-      await setHeartbeatConfig(guild.id, {
-        enabled: false,
-        channelId: hb.channelId,
-      })
-      await replyPublic(
-        i,
-        '🔕 자동 말 걸기를 껐어요. (다음 폴링을 기다리지 않고 즉시 적용돼요.)'
+    if (!this.canManagePanel(interaction)) {
+      await interaction
+        .reply({
+          content: '서버 관리 권한이 있는 사용자만 설정을 바꿀 수 있어요.',
+          flags: MessageFlags.Ephemeral,
+        })
+        .catch(() => undefined)
+      return
+    }
+
+    const kind = interaction.customId.slice(AGENT_CFG_MODAL_PREFIX.length)
+    const value = interaction.fields.getTextInputValue('value').trim()
+
+    try {
+      if (kind === 'soul') {
+        await setSoul(guild.id, value.length === 0 ? null : value)
+      } else if (kind === 'concept') {
+        await upsertServerProfile(guild.id, {
+          concept: value.length === 0 ? null : value,
+        })
+      } else if (kind === 'order') {
+        if (value.length > 0) {
+          const profile = await getServerProfile(guild.id)
+          const current = getStandingOrders(profile)
+          if (current.length < MAX_STANDING_ORDERS) {
+            await setStandingOrders(guild.id, [...current, value])
+          }
+        }
+      } else if (kind.startsWith('role:')) {
+        const channelId = kind.slice('role:'.length)
+        const profile = await getServerProfile(guild.id)
+        const channelRoles = { ...profile.channelRoles }
+        if (value.length === 0) {
+          delete channelRoles[channelId]
+        } else {
+          channelRoles[channelId] = value
+        }
+        await upsertServerProfile(guild.id, { channelRoles })
+      } else {
+        return
+      }
+
+      // 패널에서 연 모달이면 패널을 그 자리에서 갱신, 아니면 짧게 확인만.
+      if (interaction.isFromMessage()) {
+        await this.updatePanel(interaction, guild.id)
+      } else {
+        await interaction
+          .reply({ content: '저장했어요.', flags: MessageFlags.Ephemeral })
+          .catch(() => undefined)
+      }
+    } catch (err) {
+      logger.error(
+        'AI',
+        `에이전트 설정 모달 오류: ${
+          err instanceof Error ? err.message : String(err)
+        }`
       )
-      return
+      await interaction
+        .reply({
+          content: '설정 저장 중 오류가 발생했어요.',
+          flags: MessageFlags.Ephemeral,
+        })
+        .catch(() => undefined)
     }
-
-    const channel = i.options.getChannel('채널') ?? i.channel
-    const channelId = channel?.id ?? null
-    if (channelId === null) {
-      await replyEphemeral(i, '발화할 채널을 지정해 주세요.')
-      return
-    }
-    await setHeartbeatConfig(guild.id, { enabled: true, channelId })
-    await replyPublic(
-      i,
-      `🔔 자동 말 걸기를 켰어요.\n> 채널: <#${channelId}>\n> 조용 시간(23~8시) 제외, 하루 최대 ${HEARTBEAT_MAX_PER_DAY}회, 30분 간격 확인. 위험 작업은 승인 카드로 확인해요.`
-    )
-  }
-
-  @agentGroup.command({
-    name: '설정_정책',
-    description:
-      '관리자: 위험 작업(채널 삭제·추방 등)의 승인 정책을 변경합니다.',
-  })
-  async agentSetPolicy(
-    i: ChatInputCommandInteraction,
-    @option({
-      type: ApplicationCommandOptionType.String,
-      name: '승인정책',
-      description: '위험 도구 실행 전 승인 방식',
-      required: true,
-      choices: [
-        { name: '관리자만 승인 (기본값)', value: 'admin_only' },
-        { name: '요청자 본인 승인', value: 'requester' },
-        { name: '승인 없이 즉시 실행 (주의)', value: 'none' },
-      ],
-    })
-    gate: string
-  ) {
-    if (!(await this.guardServerManager(i))) return
-    const guild = i.guild
-    if (guild === null) return
-
-    if (gate !== 'admin_only' && gate !== 'requester' && gate !== 'none') {
-      await replyEphemeral(i, '알 수 없는 승인 정책이에요.')
-      return
-    }
-
-    await upsertServerProfile(guild.id, {
-      approvalPolicy: { dangerGate: gate },
-    })
-
-    const warning =
-      gate === 'none'
-        ? '\n⚠️ 이제 위험 작업도 확인 없이 바로 실행돼요. 신중하게 사용해 주세요.'
-        : ''
-    await replyPublic(
-      i,
-      `🛡️ 위험 작업 승인 정책을 **${DANGER_GATE_LABELS[gate]}**(으)로 변경했어요.${warning}`
-    )
-  }
-
-  @agentGroup.command({
-    name: '세션_초기화',
-    description: '관리자: 이 채널의 AI 대화 세션을 모두 초기화합니다.',
-  })
-  async agentClearSessions(i: ChatInputCommandInteraction) {
-    if (!(await this.guardServerManager(i))) return
-    const guild = i.guild
-    if (guild === null) return
-
-    const cleared = clearSessionsForChannel(guild.id, i.channelId)
-    if (cleared === 0) {
-      await replyEphemeral(i, '이 채널에는 초기화할 AI 세션이 없어요.')
-      return
-    }
-    await replyPublic(
-      i,
-      `🧹 이 채널의 AI 세션 ${cleared}개를 초기화했어요. 다음 멘션부터 새 대화로 시작해요.`
-    )
   }
 }
 

@@ -251,6 +251,28 @@ export async function setStandingOrders(
   })
 }
 
+// ── 소울 (에이전트 정체성 — "내가 누구인지") ──
+// OpenClaw의 SOUL.md에 해당. agent_scope(JSONB)에 저장해 새 컬럼 없이 영속.
+
+const SOUL_KEY = 'soul'
+
+/** agent_scope에서 소울(에이전트 정체성)을 꺼낸다. 없으면 null. */
+export function getSoul(profile: ServerProfile): string | null {
+  const raw = profile.agentScope[SOUL_KEY]
+  return typeof raw === 'string' && raw.trim().length > 0 ? raw : null
+}
+
+/** 소울을 저장한다(agent_scope 병합, 다른 scope 값 보존). null이면 삭제. */
+export async function setSoul(
+  guildId: string,
+  soul: string | null
+): Promise<void> {
+  const profile = await getServerProfile(guildId)
+  await upsertServerProfile(guildId, {
+    agentScope: { ...profile.agentScope, [SOUL_KEY]: soul },
+  })
+}
+
 /**
  * 서버 맥락(컨셉 + 이 채널 용도 + 상시 지침)을 프롬프트 블록으로 만든다.
  * 설정이 하나도 없으면 빈 문자열을 반환해 주입을 건너뛴다.
@@ -261,6 +283,10 @@ export async function formatServerContextForPrompt(
 ): Promise<string> {
   const profile = await getServerProfile(guildId)
   const lines: string[] = []
+  const soul = getSoul(profile)
+  if (soul !== null) {
+    lines.push(`나의 소울(정체성): ${soul}`)
+  }
   if (profile.concept !== null && profile.concept.trim().length > 0) {
     lines.push(`서버 컨셉: ${profile.concept}`)
   }
