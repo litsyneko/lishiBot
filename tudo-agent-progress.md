@@ -357,6 +357,24 @@ Supabase MCP(`apply_migration`)로 `022_cron_jobs.sql`을 원격 프로젝트에
 
 ---
 
+## D-14. 승인 카드 임베드화 + 요청자 세부 권한 주입 (2026-07-09)
+
+**배경**: 리시 지적 2건 — (1) 승인 카드를 임베드 룩으로 디자인 개선 + `<:kawaiicaution:1521755658792206366>` 사용, (2) 대화 시 요청자 세부 권한이 AI에 안 넘어감. 코드 대조로 확증: `permissionInfo`가 `isOwner`/`hasManageGuild` 두 boolean(주인/관리자/일반 3단계)으로만 판정, 세부 권한(채널/역할/메시지 관리·밴 등) 미주입.
+
+**승인 카드 재디자인 (proposalCard.ts)**:
+- `TextDisplayBuilder`만 쓰던 것을 `ContainerBuilder`(accent color 바 = 임베드 룩)로 전환. agentSettingsPanel 관례 따름.
+- accent 분기: 결정 전 = 빨강(0xed4245), 승인(✅) = 초록(0x57f287), 거부/만료/실패 = 중립 회색(0x99aab5).
+- 헤더에 `KAWAII_CAUTION` 이모지. 작업/세부내용/결정 주체/만료 구조화. 버튼 유지. 호출부(sendApprovalCards·interaction.update) 무변경(반환 `{components,flags}` 동일).
+
+**요청자 세부 권한 주입 (A안 = 핵심 관리 권한만)**:
+- 신규 `permissionSummary.ts`: `summarizeMemberPermissions(perms, {isOwner})` — 핵심 관리 권한 11종(서버/역할/채널/메시지 관리·밴/추방·타임아웃·웹훅/이벤트/스레드/닉네임 관리)만 추려 한 줄 요약. 주인·Administrator는 "모든 권한"으로 뭉침.
+- 멘션(messageCreate.ts)·답장(sessionReply.ts)·cron(runScheduledJob) 세 경로 `permissionInfo`에 배선. 기존 3단계 fallback 보존(permissionSummary 미제공 시).
+- systemPrompt.ts: "(권한: ...)" 해석 규칙 — 작업에 필요한 권한 없으면 실행 대신 안내, 위험 작업은 권한 있어도 승인 카드(권한 확인≠승인).
+
+**배포**: build/lint exit 0 → pm2 재시작(34회째, 에러 0). 두 길드 sync 성공, AI 세션 2개 복원. **스모크 잔여**: 승인 카드 디자인+kawaiicaution 렌더 / 관리 권한 없는 계정의 관리 작업 요청 시 AI 사전 안내.
+
+---
+
 ## E. 다음 할 일 / 주의
 
 - **증축 계획 6단계 전부 구현 완료.** 남은 건 배포/검증:

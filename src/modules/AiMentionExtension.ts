@@ -53,6 +53,7 @@ import {
   parseOnboardingCustomId,
 } from '../features/ai/onboardingCard'
 import { createOpencodeZenProvider } from '../features/ai/opencodeZenProvider'
+import { summarizeMemberPermissions } from '../features/ai/permissionSummary'
 import { checkToolPermissionLayer3 } from '../features/ai/permissions/permissionCheck'
 import {
   formatServerContextForPrompt,
@@ -337,6 +338,10 @@ class AiMentionExtensionClass extends Extension {
         userId,
         hasManageGuild,
         isOwner,
+        permissionSummary: summarizeMemberPermissions(
+          message.member?.permissions,
+          { isOwner }
+        ),
         memberDisplayName:
           message.member?.displayName ?? message.author.displayName,
         guildName: message.guild?.name,
@@ -535,6 +540,10 @@ class AiMentionExtensionClass extends Extension {
           : message.channel.name,
         hasManageGuild,
         isOwner,
+        permissionSummary: summarizeMemberPermissions(
+          message.member?.permissions,
+          { isOwner }
+        ),
         tools,
         commandCatalog: await getCommandCatalog(message.guild),
       })
@@ -659,6 +668,9 @@ class AiMentionExtensionClass extends Extension {
       member?.permissions.has(PermissionFlagsBits.ManageGuild) ?? false
     const hasAdmin =
       member?.permissions.has(PermissionFlagsBits.Administrator) ?? false
+    const permissionSummary = summarizeMemberPermissions(member?.permissions, {
+      isOwner: guild.ownerId === job.createdBy,
+    })
 
     const context: ToolExecutionContext = {
       guildId: job.guildId,
@@ -684,7 +696,7 @@ class AiMentionExtensionClass extends Extension {
 
     try {
       const result = await this.provider.generate(
-        `[예약된 작업 실행] ${prompt}`,
+        `[예약된 작업 실행 - 등록자 권한: ${permissionSummary}] ${prompt}`,
         [],
         {
           tools,

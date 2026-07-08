@@ -30,6 +30,8 @@ export type SessionReplyInput = {
   readonly channelName?: string
   readonly hasManageGuild?: boolean
   readonly isOwner?: boolean
+  // 요청자의 핵심 관리 권한 요약(permissionSummary.ts). AI가 작업 가능 여부를 먼저 판단하는 데 쓴다.
+  readonly permissionSummary?: string
   readonly tools?: readonly ToolDefinitionInput[]
   // 길드에 등록된 슬래시 명령어 안내문 (commandCatalog.ts에서 생성)
   readonly commandCatalog?: string
@@ -74,11 +76,14 @@ export async function handleSessionReply(
   const displayName = input.memberDisplayName ?? '사용자'
   const guildName = input.guildName ?? '서버'
   const channelName = input.channelName ?? '현재 채널'
-  const permissionInfo = input.isOwner
-    ? '(권한: 서버 주인)'
-    : input.hasManageGuild
-    ? '(권한: 서버 관리자)'
-    : '(권한: 일반 유저)'
+  const permissionInfo =
+    input.permissionSummary !== undefined
+      ? `(권한: ${input.permissionSummary})`
+      : input.isOwner
+      ? '(권한: 서버 주인)'
+      : input.hasManageGuild
+      ? '(권한: 서버 관리자)'
+      : '(권한: 일반 유저)'
   const contextPrefix = `[대화 중 - 사용자: ${displayName}] ${permissionInfo} (서버: ${guildName}, 채널: #${channelName})\n\n`
   const memoryBlock = await getMemoryStore().formatForPrompt(userId)
   const personalityBlock = await getMemoryStore().buildPersonalityPrompt(userId)

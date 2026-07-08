@@ -1,4 +1,8 @@
-import { SeparatorBuilder, TextDisplayBuilder } from '@discordjs/builders'
+import {
+  ContainerBuilder,
+  SeparatorBuilder,
+  TextDisplayBuilder,
+} from '@discordjs/builders'
 import {
   ActionRowBuilder,
   ButtonBuilder,
@@ -86,7 +90,7 @@ export function formatArgsForEmbed(args: Record<string, unknown>): string {
       typeof value === 'object' && value !== null
         ? JSON.stringify(value)
         : String(value)
-    return `${key}: ${formatted}`
+    return `\`${key}\`: ${formatted}`
   })
   const result = lines.join('\n')
   return result.length > 1024 ? `${result.slice(0, 1021)}...` : result
@@ -113,7 +117,20 @@ export function parseApprovalCustomId(
   return { action, proposalId }
 }
 
-// ─── 승인 카드 (Components V2) ───
+// ─── 승인 카드 (Components V2 컨테이너 = 임베드 룩) ───
+
+// 결정 전은 위험(빨강), 승인 후는 성공(초록), 그 외 종료(거부/만료/실패)는 중립(회색).
+const ACCENT_PENDING = 0xed4245
+const ACCENT_APPROVED = 0x57f287
+const ACCENT_NEUTRAL = 0x99aab5
+// 권한 요구 카드 전용 커스텀 이모지(리시 지정).
+const KAWAII_CAUTION = '<:kawaiicaution:1521755658792206366>'
+
+function divider(): SeparatorBuilder {
+  return new SeparatorBuilder()
+    .setDivider(true)
+    .setSpacing(SeparatorSpacingSize.Small)
+}
 
 function approvalCardBody(
   toolName: string,
@@ -128,12 +145,15 @@ function approvalCardBody(
       ? `관리자만 승인하거나 거부할 수 있어요. (요청자: <@${requesterId}>)`
       : `요청자(<@${requesterId}>)만 결정할 수 있어요.`
   return [
-    '⚠️ **승인이 필요한 작업**',
-    `AI가 위험 작업을 실행하려고 해요. ${deciderLine}`,
+    `${KAWAII_CAUTION} **승인이 필요한 작업**`,
+    'AI가 위험 작업을 실행하려고 해요. 아래 내용을 확인하고 결정해 주세요.',
     '',
-    `**작업**: ${displayName}`,
+    `**작업** · ${displayName}`,
+    '',
     '**세부 내용**',
     formatArgsForEmbed(args),
+    '',
+    `-# ${deciderLine}`,
   ].join('\n')
 }
 
@@ -145,13 +165,9 @@ export type ApprovalCardInput = {
   readonly dangerGate: 'admin_only' | 'requester' | 'none'
 }
 
-/** 위험 도구 제안을 사용자에게 보여주는 Components V2 승인 카드([실행 승인]/[거부] 버튼 포함). */
+/** 위험 도구 제안을 사용자에게 보여주는 컨테이너 승인 카드([실행 승인]/[거부] 버튼 포함). */
 export function buildApprovalCard(input: ApprovalCardInput): {
-  components: (
-    | TextDisplayBuilder
-    | SeparatorBuilder
-    | ActionRowBuilder<ButtonBuilder>
-  )[]
+  components: ContainerBuilder[]
   flags: number
 } {
   const buttons = new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -165,8 +181,9 @@ export function buildApprovalCard(input: ApprovalCardInput): {
       .setStyle(ButtonStyle.Secondary)
   )
 
-  return {
-    components: [
+  const container = new ContainerBuilder()
+    .setAccentColor(ACCENT_PENDING)
+    .addTextDisplayComponents(
       new TextDisplayBuilder().setContent(
         approvalCardBody(
           input.toolName,
@@ -174,15 +191,18 @@ export function buildApprovalCard(input: ApprovalCardInput): {
           input.requesterId,
           input.dangerGate
         )
-      ),
-      new SeparatorBuilder()
-        .setDivider(true)
-        .setSpacing(SeparatorSpacingSize.Small),
+      )
+    )
+    .addSeparatorComponents(divider())
+    .addTextDisplayComponents(
       new TextDisplayBuilder().setContent(
-        '-# 5분 안에 결정하지 않으면 만료돼요.'
-      ),
-      buttons,
-    ],
+        '-# ⏳ 5분 안에 결정하지 않으면 만료돼요.'
+      )
+    )
+    .addActionRowComponents(buttons)
+
+  return {
+    components: [container],
     flags: MessageFlags.IsComponentsV2,
   }
 }
@@ -197,11 +217,17 @@ export type ResolvedApprovalCardInput = {
 
 /** 결정이 끝난 승인 카드 — 버튼을 제거하고 처리 결과 상태줄로 치환한다. */
 export function buildResolvedApprovalCard(input: ResolvedApprovalCardInput): {
-  components: (TextDisplayBuilder | SeparatorBuilder)[]
+  components: ContainerBuilder[]
   flags: number
 } {
-  return {
-    components: [
+  // 승인(✅)은 성공색, 나머지 종료(거부/만료/실패)는 중립색으로 시각 구분.
+  const accent = input.statusLine.includes('✅')
+    ? ACCENT_APPROVED
+    : ACCENT_NEUTRAL
+
+  const container = new ContainerBuilder()
+    .setAccentColor(accent)
+    .addTextDisplayComponents(
       new TextDisplayBuilder().setContent(
         approvalCardBody(
           input.toolName,
@@ -209,12 +235,15 @@ export function buildResolvedApprovalCard(input: ResolvedApprovalCardInput): {
           input.requesterId,
           input.dangerGate
         )
-      ),
-      new SeparatorBuilder()
-        .setDivider(true)
-        .setSpacing(SeparatorSpacingSize.Small),
-      new TextDisplayBuilder().setContent(input.statusLine),
-    ],
+      )
+    )
+    .addSeparatorComponents(divider())
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(input.statusLine)
+    )
+
+  return {
+    components: [container],
     flags: MessageFlags.IsComponentsV2,
   }
 }

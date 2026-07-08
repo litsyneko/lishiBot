@@ -28,6 +28,8 @@ export type MessageCreateInput = {
   readonly userId: string
   readonly hasManageGuild: boolean
   readonly isOwner: boolean
+  // 요청자의 핵심 관리 권한 요약(permissionSummary.ts). AI가 작업 가능 여부를 먼저 판단하는 데 쓴다.
+  readonly permissionSummary?: string
   readonly replyToBotMessageId?: string | undefined
   readonly memberDisplayName?: string
   readonly guildName?: string
@@ -147,11 +149,14 @@ export async function handleMessageCreate(
     const displayName = context.message.memberDisplayName ?? '사용자'
     const guildName = context.message.guildName ?? '서버'
     const channelName = context.message.channelName ?? '현재 채널'
-    const permissionInfo = context.message.isOwner
-      ? '(권한: 서버 주인)'
-      : context.message.hasManageGuild
-      ? '(권한: 서버 관리자)'
-      : '(권한: 일반 유저)'
+    const permissionInfo =
+      context.message.permissionSummary !== undefined
+        ? `(권한: ${context.message.permissionSummary})`
+        : context.message.isOwner
+        ? '(권한: 서버 주인)'
+        : context.message.hasManageGuild
+        ? '(권한: 서버 관리자)'
+        : '(권한: 일반 유저)'
     const sessionKey = `${context.message.guildId}:${context.message.channelId}:${context.message.userId}`
     const memoryBlock = await getMemoryStore().formatForPrompt(
       context.message.userId
