@@ -69,6 +69,7 @@ export const toolNameMap: Record<string, string> = {
   send_embed: '임베드 전송',
   edit_message: '메시지 수정',
   delete_message: '메시지 삭제',
+  bulk_delete_messages: '대량 메시지 삭제',
   pin_message: '메시지 고정',
   unpin_message: '고정 해제',
   react_message: '메시지 반응',

@@ -375,6 +375,24 @@ Supabase MCP(`apply_migration`)로 `022_cron_jobs.sql`을 원격 프로젝트에
 
 ---
 
+## D-15. 대량 메시지 삭제 도구 (bulk_delete_messages) (2026-07-09)
+
+**배경**: 리시가 "채널 메시지 다 지워줘"류를 시키면 AI가 `delete_message`를 개수만큼(20개+) 개별 호출 → danger라 승인 카드가 하나당 하나씩 쏟아지는 UX 문제 제기(스크린샷). 승인 카드 폭탄.
+
+**해결**: 신규 `bulk_delete_messages`(messageTools.ts).
+- count개를 100개씩 페이지네이션으로 수집 → 14일 경계로 이분.
+- 14일 이내: `channel.bulkDelete(chunk, true)`로 100개씩 한 번에. 경계에서 filterOld로 빠진 건 개별 폴백.
+- 14일 초과: 디스코드가 벌크를 막으므로 개별 순차 삭제(상한 없음, 리시 결정). discord.js가 rate limit 자동 관리.
+- danger 1개 = 승인 카드 1개. `delete_message` N개 대신 이 도구 하나로 카드 폭탄 해소.
+- description에 "대량 삭제엔 delete_message 여러 번 말고 이걸 써라" 강제 힌트.
+- 등록: toolRegistry(register) + proposalCard.toolNameMap('대량 메시지 삭제').
+
+**리시 확정**: 14일 이내 모두 삭제 / 14일 초과 상한 없이 개별. "2개씩 벌크·병렬"은 디스코드 제약(벌크는 14일 초과 불가, 병렬도 채널 단위 rate limit)으로 실익 없어 개별 순차가 유일.
+
+**배포**: build/lint exit 0 → pm2 재시작. 두 길드 sync 성공. **스모크 잔여**: 실제 "N개 지워줘" → 승인 카드 하나 → 삭제 확인.
+
+---
+
 ## E. 다음 할 일 / 주의
 
 - **증축 계획 6단계 전부 구현 완료.** 남은 건 배포/검증:

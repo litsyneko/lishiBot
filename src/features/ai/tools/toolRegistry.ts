@@ -33,6 +33,7 @@ import {
 import { lookupMemberTool } from './tools/memberTools'
 import { saveMemoryTool } from './tools/memoryTool'
 import {
+  bulkDeleteMessagesTool,
   deleteMessageTool,
   editMessageTool,
   pinMessageTool,
@@ -131,6 +132,7 @@ export function createToolRegistry(client: Client): ToolRegistry {
   register(sendEmbedTool(client))
   register(editMessageTool(client))
   register(deleteMessageTool(client))
+  register(bulkDeleteMessagesTool(client))
   register(pinMessageTool(client))
   register(unpinMessageTool(client))
   register(reactMessageTool(client))
