@@ -119,7 +119,7 @@ export function playMusicTool(client: Client): ToolDefinition {
     declaration: {
       name: 'play_music',
       description:
-        '유튜브/유튜브 뮤직에서 음악이나 플레이리스트를 검색하고 재생합니다. 검색어 또는 URL을 입력하세요.',
+        '유튜브/유튜브 뮤직에서 음악을 검색해 바로 재생합니다. 곡 제목만 넘겨도 재생되니 URL이 필요 없어요. 노래 재생 요청에는 검색을 따로 하지 말고 이 도구를 바로 쓰세요. 절대 사용자에게 유튜브 링크를 직접 달라고 요구하지 마세요. query에 곡 제목·가수 또는 유튜브 URL을 넣습니다.',
       parameters: {
         type: 'object',
         properties: {
@@ -749,13 +749,17 @@ export function searchMusicTool(_client: Client): ToolDefinition {
               t.info.duration !== undefined && t.info.duration > 0
                 ? ` (${formatDuration(t.info.duration)})`
                 : ''
+            const uri =
+              typeof t.info.uri === 'string' && t.info.uri.length > 0
+                ? `\n   ${t.info.uri}`
+                : ''
             return `${i + 1}. ${t.info.title} - ${
               t.info.author ?? '알 수 없음'
-            }${dur}`
+            }${dur}${uri}`
           })
           .join('\n')
 
-        const summary = `검색 결과:\n${list}`
+        const summary = `검색 결과:\n${list}\n\n재생하려면 play_music에 원하는 곡의 제목이나 위 URL을 넘기세요. 사용자에게 유튜브 링크를 직접 요청하지 마세요.`
         logger.info(
           'AITool',
           `search_music: ${query} → ${tracks.length}개 결과`

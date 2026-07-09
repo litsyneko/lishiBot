@@ -406,6 +406,21 @@ Supabase MCP(`apply_migration`)로 `022_cron_jobs.sql`을 원격 프로젝트에
 
 ---
 
+## D-17. 음악 재생 버그픽스 — AI가 링크 요구하며 재생 안 하던 문제 (2026-07-09)
+
+**배경**: 리시 제보 — 노래 재생 요청 시 봇이 "유튜브 링크를 직접 달라"며 재생 안 함. 로그 확인: `search_music`만 반복 호출, `play_music`은 0회 — 검색만 하고 재생 시도조차 안 함.
+
+**원인**: (1) `search_music` 결과 텍스트(message)에 재생용 uri가 없어(data엔 있으나 모델은 message 위주 + turn 넘기면 240자 절단) AI가 검색→재생 연결을 못 함. (2) `play_music`이 제목만으로 재생된다는 걸 프롬프트/설명이 강조 안 해 AI가 "URL 필요"로 오판.
+
+**수정**:
+- musicTool.ts `search_music`: 결과 목록 각 줄에 uri 노출 + "재생하려면 play_music에 제목/URL 넘겨라, 링크 요구 말라" 힌트.
+- musicTool.ts `play_music` description: "제목만으로 재생, URL 불필요, 링크 요구 금지" 명시.
+- systemPrompt.ts: '## 음악 재생' 섹션 신설 — 노래 요청 시 바로 play_music, 링크 요구 절대 금지, 재생 실패는 대개 음성 채널 문제.
+
+**배포**: build/lint exit 0 → pm2 재시작, sync 성공. **스모크 잔여**: 음성 채널 입장 후 "노래 틀어줘" → 바로 재생되는지.
+
+---
+
 ## E. 다음 할 일 / 주의
 
 - **증축 계획 6단계 전부 구현 완료.** 남은 건 배포/검증:
