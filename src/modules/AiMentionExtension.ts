@@ -1074,9 +1074,19 @@ class AiMentionExtensionClass extends Extension {
           )
         })
     }
+    // 결정이 끝난 승인 카드는 3초 뒤 자동 제거(채널 정리). 결과는 followUp으로 별도 유지.
+    const scheduleCardRemoval = (): void => {
+      setTimeout(() => {
+        void interaction.message.delete().catch(() => undefined)
+      }, 3000)
+    }
+    const finalizeCard = async (statusLine: string): Promise<void> => {
+      await updateCard(statusLine)
+      scheduleCardRemoval()
+    }
 
     if (parsed.action === 'deny') {
-      await updateCard('🚫 거부됨 — 작업을 실행하지 않았어요.')
+      await finalizeCard('🚫 거부됨 — 작업을 실행하지 않았어요.')
       // 거부도 도구 결과처럼 세션에 남긴다 — 다음 턴에 모델이 "거부됨"을 인지해 재시도하지 않도록.
       const sessionKey = getOrCreateSession(
         proposal.context.guildId,
@@ -1096,13 +1106,13 @@ class AiMentionExtensionClass extends Extension {
     }
 
     if (Date.now() - proposal.createdAt > APPROVAL_TTL_MS) {
-      await updateCard('⏰ 만료됨 — 필요하면 다시 요청해 주세요.')
+      await finalizeCard('⏰ 만료됨 — 필요하면 다시 요청해 주세요.')
       return
     }
 
     const toolDef = this.toolRegistry?.get(proposal.toolName)
     if (toolDef === undefined) {
-      await updateCard('❌ 작업 정보를 찾을 수 없어요.')
+      await finalizeCard('❌ 작업 정보를 찾을 수 없어요.')
       return
     }
 
@@ -1121,7 +1131,7 @@ class AiMentionExtensionClass extends Extension {
       hasAdmin
     )
     if (!executeCheck.ok) {
-      await updateCard(`⛔ ${executeCheck.reason}`)
+      await finalizeCard(`⛔ ${executeCheck.reason}`)
       return
     }
 
@@ -1186,6 +1196,8 @@ class AiMentionExtensionClass extends Extension {
           )
         })
     }
+    // 승인 실행이 끝났으니(성공/실패 무관) 카드는 3초 뒤 제거, 결과 followUp만 남긴다.
+    scheduleCardRemoval()
   }
 
   // ── /에이전트 서브커맨드 ──

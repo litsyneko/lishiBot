@@ -393,6 +393,19 @@ Supabase MCP(`apply_migration`)로 `022_cron_jobs.sql`을 원격 프로젝트에
 
 ---
 
+## D-16. 승인 카드 3초 후 자동 제거 (2026-07-09)
+
+**배경**: 리시 요청 — 결정이 끝난 승인 카드가 채널에 계속 남아 지저분함. 결정 후 치울 것.
+
+**해결**(AiMentionExtension.ts 승인 핸들러):
+- 신규 `scheduleCardRemoval`(setTimeout 3s → `interaction.message.delete()`, 실패 무시) + `finalizeCard`(updateCard + 제거 예약).
+- 결정 종료 지점 전부에 적용 — 거부/만료/정보없음/L3권한실패는 `finalizeCard`로 교체. 승인 실행은 "✅ 승인됨 — 실행 중…" 표시 유지 후 try/catch 종료 시 `scheduleCardRemoval`(성공/실패 무관).
+- 실행 결과는 followUp 별도 메시지라 카드가 사라져도 남는다.
+
+**배포**: build/lint exit 0 → pm2 재시작, 두 길드 sync 성공. **스모크 잔여**: 실제 승인/거부 후 카드가 3초 뒤 사라지는지.
+
+---
+
 ## E. 다음 할 일 / 주의
 
 - **증축 계획 6단계 전부 구현 완료.** 남은 건 배포/검증:
