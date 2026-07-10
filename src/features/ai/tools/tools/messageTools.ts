@@ -1,10 +1,14 @@
 import { resolveAccessibleChannel } from '../helpers/channelAccess'
+import {
+  deleteMessagesBulk,
+  fetchRecentMessages,
+} from '../helpers/messageCleanup'
 import type {
   ToolDefinition,
   ToolExecutionContext,
   ToolResult,
 } from '../toolTypes'
-import { Client, type Message } from 'discord.js'
+import { Client } from 'discord.js'
 
 function strArg(args: Record<string, unknown>, key: string): string {
   const v = args[key]
@@ -174,80 +178,17 @@ export function bulkDeleteMessagesTool(client: Client): ToolDefinition {
       if (!access.ok) return { success: false, message: access.reason }
       const ch = access.channel
       try {
-        // 1) count개까지 최근 메시지를 모은다(100개씩 페이지네이션).
-        const collected: Message[] = []
-        let before: string | undefined
-        while (collected.length < count) {
-          const limit = Math.min(100, count - collected.length)
-          const batch = await ch.messages.fetch(
-            before === undefined ? { limit } : { limit, before }
-          )
-          if (batch.size === 0) break
-          const arr = [...batch.values()]
-          collected.push(...arr)
-          before = arr[arr.length - 1]?.id
-          if (batch.size < limit) break
-        }
+        const collected = await fetchRecentMessages(ch, count)
         if (collected.length === 0) {
           return { success: true, message: '삭제할 메시지가 없어요.' }
         }
-
-        // 2) 14일 경계로 이분한다(디스코드는 14일 초과 메시지의 벌크 삭제를 막는다).
-        const TWO_WEEKS_MS = 14 * 24 * 60 * 60 * 1000
-        const now = Date.now()
-        const recent = collected.filter(
-          (m) => now - m.createdTimestamp < TWO_WEEKS_MS
+        const { deleted, failed, oldCount } = await deleteMessagesBulk(
+          ch,
+          collected
         )
-        const old = collected.filter(
-          (m) => now - m.createdTimestamp >= TWO_WEEKS_MS
-        )
-
-        let deleted = 0
-        let failed = 0
-
-        // 3) 14일 이내: 100개씩 벌크 삭제(1개면 개별).
-        for (let i = 0; i < recent.length; i += 100) {
-          const chunk = recent.slice(i, i + 100)
-          try {
-            if (chunk.length === 1) {
-              const single = chunk[0]
-              if (single !== undefined) {
-                await single.delete()
-                deleted += 1
-              }
-            } else {
-              const removed = await ch.bulkDelete(chunk, true)
-              deleted += removed.size
-              // filterOld로 벌크에서 빠진 경계 메시지는 개별로 처리.
-              for (const m of chunk) {
-                if (!removed.has(m.id)) {
-                  try {
-                    await m.delete()
-                    deleted += 1
-                  } catch {
-                    failed += 1
-                  }
-                }
-              }
-            }
-          } catch {
-            failed += chunk.length
-          }
-        }
-
-        // 4) 14일 초과: 개별 순차 삭제(상한 없음). discord.js가 rate limit을 자동 관리.
-        for (const m of old) {
-          try {
-            await m.delete()
-            deleted += 1
-          } catch {
-            failed += 1
-          }
-        }
-
         const parts = [`메시지 ${deleted}개를 삭제했어요.`]
-        if (old.length > 0) {
-          parts.push(`(14일 초과 ${old.length}개는 하나씩 처리)`)
+        if (oldCount > 0) {
+          parts.push(`(14일 초과 ${oldCount}개는 하나씩 처리)`)
         }
         if (failed > 0) parts.push(`· ${failed}개는 삭제하지 못했어요.`)
         return { success: true, message: parts.join(' ') }
