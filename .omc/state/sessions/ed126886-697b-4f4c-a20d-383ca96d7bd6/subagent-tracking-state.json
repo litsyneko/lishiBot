@@ -1,0 +1,26 @@
+{
+  "agents": [
+    {
+      "agent_id": "abot-features-survey-cd43d50e43521f85",
+      "agent_type": "bot-features-survey",
+      "started_at": "2026-07-15T14:24:16.747Z",
+      "parent_mode": "none",
+      "status": "completed",
+      "completed_at": "2026-07-15T14:25:26.053Z",
+      "duration_ms": 69306
+    },
+    {
+      "agent_id": "a7382b0aa49df9c74",
+      "agent_type": "unknown",
+      "started_at": "2026-07-15T14:54:45.772Z",
+      "parent_mode": "none",
+      "status": "completed",
+      "completed_at": "2026-07-15T14:54:45.772Z",
+      "duration_ms": 0
+    }
+  ],
+  "total_spawned": 2,
+  "total_completed": 3,
+  "total_failed": 0,
+  "last_updated": "2026-07-15T14:54:45.952Z"
+}

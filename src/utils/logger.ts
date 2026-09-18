@@ -90,7 +90,7 @@ function emit(level: LogLevel, category: string, message: string): void {
   } as never)
 }
 
-export type FullMoonLogger = {
+export type LisyBotLogger = {
   readonly debug: (category: string, message: string) => void
   readonly error: (category: string, message: string) => void
   readonly info: (category: string, message: string) => void
@@ -98,7 +98,7 @@ export type FullMoonLogger = {
   readonly warn: (category: string, message: string) => void
 }
 
-export const logger: FullMoonLogger = {
+export const logger: LisyBotLogger = {
   debug: (category, message) => emit('DEBUG', category, message),
   error: (category, message) => emit('ERROR', category, message),
   info: (category, message) => emit('INFO', category, message),

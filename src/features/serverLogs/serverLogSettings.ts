@@ -10,17 +10,25 @@ const SETTINGS_TABLE = 'server_log_settings'
 
 export type CategoryChannelMap = Record<ServerLogCategory, string | null>
 
+export type ServerLogExclusions = {
+  readonly channels: readonly string[]
+  readonly users: readonly string[]
+  readonly roles: readonly string[]
+}
+
 export type ServerLogSettings = {
   readonly categoryChannels: CategoryChannelMap
   readonly enabled: boolean
+  readonly exclusions: ServerLogExclusions
 }
 
 export type ServerLogSettingsPatch = {
   readonly categoryChannels?: Partial<CategoryChannelMap>
   readonly enabled?: boolean
+  readonly exclusions?: Partial<ServerLogExclusions>
 }
 
-const SETTINGS_COLUMNS = 'guild_id, enabled, category_channels'
+const SETTINGS_COLUMNS = 'guild_id, enabled, category_channels, exclusions'
 
 const committedCache = new Map<string, ServerLogSettings>()
 const draftCache = new Map<string, ServerLogSettings>()
@@ -29,6 +37,7 @@ export function getDefaultServerLogSettings(): ServerLogSettings {
   return {
     categoryChannels: emptyCategoryChannels(),
     enabled: false,
+    exclusions: emptyExclusions(),
   }
 }
 
@@ -79,9 +88,9 @@ export async function getServerLogSettings(
     return getDefaultServerLogSettings()
   }
 
-  if (data === null) return getDefaultServerLogSettings()
-
-  const settings = parseSettingsRow(data)
+  // 행이 없는 길드도 캐시해 이벤트마다 DB를 조회하지 않는다.
+  const settings =
+    data === null ? getDefaultServerLogSettings() : parseSettingsRow(data)
   committedCache.set(guildId, settings)
   return settings
 }
@@ -108,10 +117,15 @@ export function updateDraft(
       ? mergeCategoryChannels(base.categoryChannels, patch.categoryChannels)
       : base.categoryChannels
   const nextEnabled = patch.enabled !== undefined ? patch.enabled : base.enabled
+  const nextExclusions =
+    patch.exclusions !== undefined
+      ? { ...base.exclusions, ...patch.exclusions }
+      : base.exclusions
 
   const next: ServerLogSettings = {
     categoryChannels: nextCategoryChannels,
     enabled: nextEnabled,
+    exclusions: nextExclusions,
   }
   draftCache.set(guildId, next)
   return next
@@ -120,6 +134,7 @@ export function updateDraft(
 export async function commitDraft(guildId: string): Promise<ServerLogSettings> {
   const draft = draftCache.get(guildId) ?? readCommittedOrDefault(guildId)
   committedCache.set(guildId, draft)
+  draftCache.delete(guildId)
 
   const supabase = getSupabase()
   if (supabase !== null) {
@@ -127,6 +142,7 @@ export async function commitDraft(guildId: string): Promise<ServerLogSettings> {
       {
         category_channels: toStoredMap(draft.categoryChannels),
         enabled: draft.enabled,
+        exclusions: toStoredExclusions(draft.exclusions),
         guild_id: guildId,
       },
       { onConflict: 'guild_id' }
@@ -152,10 +168,12 @@ function readCommittedOrDefault(guildId: string): ServerLogSettings {
 function parseSettingsRow(row: {
   readonly category_channels?: Record<string, string | null> | null
   readonly enabled?: boolean | null
+  readonly exclusions?: Record<string, unknown> | null
 }): ServerLogSettings {
   return {
     categoryChannels: parseCategoryChannels(row.category_channels),
     enabled: row.enabled === true,
+    exclusions: parseExclusions(row.exclusions),
   }
 }
 
@@ -164,6 +182,10 @@ function emptyCategoryChannels(): CategoryChannelMap {
     acc[category] = null
     return acc
   }, {} as Record<ServerLogCategory, string | null>)
+}
+
+export function emptyExclusions(): ServerLogExclusions {
+  return { channels: [], roles: [], users: [] }
 }
 
 function parseCategoryChannels(
@@ -183,6 +205,24 @@ function parseCategoryChannels(
   return result
 }
 
+function parseExclusions(
+  raw: Record<string, unknown> | null | undefined
+): ServerLogExclusions {
+  if (raw === null || raw === undefined) return emptyExclusions()
+  return {
+    channels: parseIdList(raw['channels']),
+    roles: parseIdList(raw['roles']),
+    users: parseIdList(raw['users']),
+  }
+}
+
+function parseIdList(value: unknown): readonly string[] {
+  if (!Array.isArray(value)) return []
+  return value.filter(
+    (item): item is string => typeof item === 'string' && item.length > 0
+  )
+}
+
 function mergeCategoryChannels(
   current: CategoryChannelMap,
   patch: Partial<CategoryChannelMap>
@@ -192,4 +232,14 @@ function mergeCategoryChannels(
 
 function toStoredMap(map: CategoryChannelMap): Record<string, string | null> {
   return { ...map }
+}
+
+function toStoredExclusions(
+  exclusions: ServerLogExclusions
+): Record<string, readonly string[]> {
+  return {
+    channels: exclusions.channels,
+    roles: exclusions.roles,
+    users: exclusions.users,
+  }
 }

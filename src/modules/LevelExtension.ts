@@ -1,3 +1,4 @@
+import { renderActivityLevelCard } from '../features/activityLevels/activityLevelCard'
 import {
   type LevelTrack,
   createActivityLevelService,
@@ -12,13 +13,16 @@ import {
 } from '@pikokr/command.ts'
 import {
   ApplicationCommandOptionType,
+  AttachmentBuilder,
   ChatInputCommandInteraction,
   type Message,
-  type User,
+  MessageFlags,
   type VoiceState,
 } from 'discord.js'
 
-const levelGroup = new SubCommandGroup({
+// 다른 모듈(StatsExtension)이 같은 그룹에 하위명령어를 추가할 수 있도록 export.
+// command.ts는 그룹 이름 기준으로 하위명령어를 병합한다.
+export const levelGroup = new SubCommandGroup({
   name: '레벨',
   description: '경제와 분리된 서버 활동/음성 레벨 명령어',
 })
@@ -152,7 +156,32 @@ class LevelExtensionClass extends Extension {
     try {
       const user = i.options.getUser('유저') ?? i.user
       const stats = await activityLevels.getStats(i.guild.id, user.id)
-      await replyPublic(i, this.buildProfileMessage(user, stats))
+
+      const avatarUrl =
+        user.avatarURL({ extension: 'png', size: 256 }) ?? user.defaultAvatarURL
+
+      const png = await renderActivityLevelCard({
+        username: user.username,
+        avatarUrl,
+        text: stats.text,
+        voice: stats.voice,
+      })
+
+      const attachment = new AttachmentBuilder(png, {
+        name: `level-${user.id}.png`,
+      })
+
+      const caption = `🌙 **${user.username}** 님의 서버 레벨`
+
+      if (i.deferred || i.replied) {
+        await i.followUp({ content: caption, files: [attachment] })
+        return
+      }
+      await i.reply({
+        content: caption,
+        files: [attachment],
+        flags: MessageFlags.SuppressEmbeds,
+      })
     } catch (err) {
       await replyEphemeral(
         i,
@@ -240,27 +269,6 @@ class LevelExtensionClass extends Extension {
         }`
       )
     }
-  }
-
-  private buildProfileMessage(
-    user: User,
-    stats: Awaited<ReturnType<typeof activityLevels.getStats>>
-  ): string {
-    return [
-      `📊 **${user.username}님의 서버 레벨**`,
-      '',
-      `💬 **서버 활동 레벨** Lv.${stats.text.level}`,
-      `XP: ${stats.text.xp.toLocaleString()} / ${stats.text.xpNeeded.toLocaleString()} · 다음 레벨까지 ${stats.text.xpRemaining.toLocaleString()} XP`,
-      `메시지 기록: ${stats.text.messageCount.toLocaleString()}개`,
-      '',
-      `🎙️ **음성 활동 레벨** Lv.${stats.voice.level}`,
-      `XP: ${stats.voice.xp.toLocaleString()} / ${stats.voice.xpNeeded.toLocaleString()} · 다음 레벨까지 ${stats.voice.xpRemaining.toLocaleString()} XP`,
-      `음성 시간: ${formatDuration(
-        stats.voice.totalSeconds
-      )} · 세션 ${stats.voice.sessionCount.toLocaleString()}회`,
-      '',
-      '-# 경제 레벨과 별개로 서버별로 저장됩니다.',
-    ].join('\n')
   }
 }
 

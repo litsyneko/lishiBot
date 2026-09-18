@@ -24,7 +24,7 @@ export function buildBoostEmbed(mention: string): EmbedBuilder {
     .setTitle('💜 서버 부스트 감사합니다!')
     .setDescription(message)
     .setColor(0x9b59b6)
-    .setFooter({ text: 'FullMoon · 리시' })
+    .setFooter({ text: 'LisyBot · 리시' })
     .setTimestamp()
 }
 
@@ -37,6 +37,6 @@ export function buildBoostTierUpEmbed(
     .setTitle(`💜 서버 부스트 레벨 ${tier} 달성!`)
     .setDescription(message)
     .setColor(0x9b59b6)
-    .setFooter({ text: `FullMoon · 리시 · 부스트 레벨 ${tier}` })
+    .setFooter({ text: `LisyBot · 리시 · 부스트 레벨 ${tier}` })
     .setTimestamp()
 }

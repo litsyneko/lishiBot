@@ -1,0 +1,69 @@
+{
+  "updatedAt": "2026-07-10T07:05:31.882Z",
+  "missions": [
+    {
+      "id": "session:b8ac8441-c99c-4534-aecf-4891d764c986:none",
+      "source": "session",
+      "name": "none",
+      "objective": "Session mission",
+      "createdAt": "2026-07-10T06:36:11.038Z",
+      "updatedAt": "2026-07-10T07:05:31.882Z",
+      "status": "done",
+      "workerCount": 1,
+      "taskCounts": {
+        "total": 1,
+        "pending": 0,
+        "blocked": 0,
+        "inProgress": 0,
+        "completed": 1,
+        "failed": 0
+      },
+      "agents": [
+        {
+          "name": "log-reviewer:alog-re",
+          "role": "log-reviewer",
+          "ownership": "alog-reviewer-983f9bb86428400f",
+          "status": "done",
+          "currentStep": null,
+          "latestUpdate": "completed",
+          "completedSummary": null,
+          "updatedAt": "2026-07-10T07:05:31.882Z"
+        }
+      ],
+      "timeline": [
+        {
+          "id": "session-start:alog-reviewer-983f9bb86428400f:2026-07-10T06:36:11.038Z",
+          "at": "2026-07-10T06:36:11.038Z",
+          "kind": "update",
+          "agent": "log-reviewer:alog-re",
+          "detail": "started log-reviewer:alog-re",
+          "sourceKey": "session-start:alog-reviewer-983f9bb86428400f"
+        },
+        {
+          "id": "session-stop:a791b4c745f2975b7:2026-07-10T06:42:50.206Z",
+          "at": "2026-07-10T06:42:50.206Z",
+          "kind": "completion",
+          "agent": "log-reviewer:alog-re",
+          "detail": "completed",
+          "sourceKey": "session-stop:a791b4c745f2975b7"
+        },
+        {
+          "id": "session-stop:alog-reviewer-983f9bb86428400f:2026-07-10T06:52:42.156Z",
+          "at": "2026-07-10T06:52:42.156Z",
+          "kind": "completion",
+          "agent": "log-reviewer:alog-re",
+          "detail": "completed",
+          "sourceKey": "session-stop:alog-reviewer-983f9bb86428400f"
+        },
+        {
+          "id": "session-stop:a25eb3ec45c501638:2026-07-10T07:05:31.882Z",
+          "at": "2026-07-10T07:05:31.882Z",
+          "kind": "completion",
+          "agent": "log-reviewer:alog-re",
+          "detail": "completed",
+          "sourceKey": "session-stop:a25eb3ec45c501638"
+        }
+      ]
+    }
+  ]
+}

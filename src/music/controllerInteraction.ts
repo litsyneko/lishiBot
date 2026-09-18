@@ -28,7 +28,7 @@ function checkVoiceChannel(
   const member = interaction.member
   if (!(member instanceof GuildMember) || member.voice.channelId === null) {
     void interaction.reply({
-      content: '?�성 채널??먼�? ?�어가 주세??',
+      content: '음성 채널에 먼저 들어가 주세요.',
       flags: MessageFlags.Ephemeral,
     })
     return false
@@ -37,7 +37,7 @@ function checkVoiceChannel(
   const botId = interaction.client.user?.id
   if (botId === undefined) {
     void interaction.reply({
-      content: '�??�보�?가?�올 ???�어??',
+      content: '봇 정보를 가져올 수 없어요.',
       flags: MessageFlags.Ephemeral,
     })
     return false
@@ -46,7 +46,7 @@ function checkVoiceChannel(
   const botVoice = interaction.guild?.members.me?.voice.channelId
   if (botVoice === null || botVoice === undefined) {
     void interaction.reply({
-      content: '봇이 ?�성 채널???�어??',
+      content: '봇이 음성 채널에 없어요.',
       flags: MessageFlags.Ephemeral,
     })
     return false
@@ -54,7 +54,7 @@ function checkVoiceChannel(
 
   if (member.voice.channelId !== botVoice) {
     void interaction.reply({
-      content: '봇과 같�? ?�성 채널???�어???�요.',
+      content: '봇과 같은 음성 채널에 있어야 해요.',
       flags: MessageFlags.Ephemeral,
     })
     return false
@@ -80,7 +80,7 @@ export function registerControllerInteractionHandler(
 ): void {
   client.on('interactionCreate', async (interaction: Interaction) => {
     try {
-      // ?�?� Button interactions ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
+      // ── Button interactions ──────────────────────
       if (interaction.isButton()) {
         if (!interaction.customId.startsWith(PREFIX)) return
         const guildId = interaction.guildId
@@ -92,7 +92,7 @@ export function registerControllerInteractionHandler(
         const player = requirePlayer(manager, guildId)
         if (player === undefined) {
           await interaction.editReply({
-            content: '?�생 중인 봇이 ?�어??',
+            content: '재생 중인 봇이 없어요.',
             components: [],
           })
           return
@@ -104,7 +104,7 @@ export function registerControllerInteractionHandler(
           case 'prev': {
             if (player.queue.previous.length === 0) {
               await interaction.editReply({
-                content: '?�전 곡이 ?�어??',
+                content: '이전 곡이 없어요.',
                 components: [],
               })
               return
@@ -133,7 +133,7 @@ export function registerControllerInteractionHandler(
           case 'skip': {
             if (player.queue.tracks.length === 0) {
               await interaction.editReply({
-                content: '?�음 곡이 ?�어??',
+                content: '다음 곡이 없어요.',
                 components: [],
               })
               return
@@ -154,7 +154,7 @@ export function registerControllerInteractionHandler(
           case 'shuffle': {
             if (player.queue.tracks.length < 2) {
               await interaction.editReply({
-                content: '?�플??곡이 충분?��? ?�아??',
+                content: '셔플할 곡이 충분하지 않아요.',
                 components: [],
               })
               return
@@ -331,7 +331,7 @@ export function registerControllerInteractionHandler(
             const selected = player.getData<string>('controllerSelectedTrack')
             if (selected === undefined) {
               await interaction.editReply({
-                content: '먼�? ?�택 메뉴?�서 곡을 ?�택??주세??',
+                content: '먼저 선택 메뉴에서 곡을 선택해 주세요.',
                 components: [],
               })
               return
@@ -343,7 +343,7 @@ export function registerControllerInteractionHandler(
               idx > player.queue.tracks.length
             ) {
               await interaction.editReply({
-                content: '?�바르�? ?��? 번호?�요.',
+                content: '올바르지 않은 번호예요.',
                 components: [],
               })
               return
@@ -356,7 +356,7 @@ export function registerControllerInteractionHandler(
             const selected = player.getData<string>('controllerSelectedTrack')
             if (selected === undefined) {
               await interaction.editReply({
-                content: '먼�? ?�택 메뉴?�서 곡을 ?�택??주세??',
+                content: '먼저 선택 메뉴에서 곡을 선택해 주세요.',
                 components: [],
               })
               return
@@ -368,7 +368,7 @@ export function registerControllerInteractionHandler(
               idx > player.queue.tracks.length
             ) {
               await interaction.editReply({
-                content: '?�바르�? ?��? 번호?�요.',
+                content: '올바르지 않은 번호예요.',
                 components: [],
               })
               return
@@ -376,9 +376,9 @@ export function registerControllerInteractionHandler(
             const removed = player.queue.tracks[idx - 1]
             player.queue.remove(idx - 1)
             await interaction.editReply({
-              content: `?�� \`#${idx}\` **${
-                removed?.info.title ?? '?????�음'
-              }**??�? ??��?�어??`,
+              content: `🗑️ \`#${idx}\` **${
+                removed?.info.title ?? '알 수 없음'
+              }**을(를) 삭제했어요.`,
               components: [],
             })
             return
@@ -391,7 +391,7 @@ export function registerControllerInteractionHandler(
         return
       }
 
-      // ?�?� String select menu interactions ?�?�?�?�?�?�?�?�?�?�
+      // ── String select menu interactions ──────────
       if (interaction.isStringSelectMenu()) {
         if (!interaction.customId.startsWith(PREFIX)) return
         const guildId = interaction.guildId
@@ -403,7 +403,7 @@ export function registerControllerInteractionHandler(
         const player = requirePlayer(manager, guildId)
         if (player === undefined) {
           await interaction.editReply({
-            content: '?�생 중인 봇이 ?�어??',
+            content: '재생 중인 봇이 없어요.',
             components: [],
           })
           return
@@ -427,18 +427,18 @@ export function registerControllerInteractionHandler(
     } catch (err) {
       logger.error(
         'ControllerInteraction',
-        `?�들???�류: ${err instanceof Error ? err.message : String(err)}`
+        `핸들러 오류: ${err instanceof Error ? err.message : String(err)}`
       )
       try {
         if (interaction.isButton() || interaction.isStringSelectMenu()) {
           if (interaction.deferred || interaction.replied) {
             await interaction.editReply({
-              content: '?�류가 발생?�어??',
+              content: '오류가 발생했어요.',
               components: [],
             })
           } else {
             await interaction.reply({
-              content: '?�류가 발생?�어??',
+              content: '오류가 발생했어요.',
               flags: MessageFlags.Ephemeral,
             })
           }

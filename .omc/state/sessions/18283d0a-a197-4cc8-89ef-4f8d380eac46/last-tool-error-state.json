@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"pnpm build 2>&1 | grep -E \\\"✓ Compiled|✓ Generating|Failed|Error\\\" | head -4; pm2 restart dashboard 2>&1 | grep \\\"✓\\\" && sleep 4 && curl -s -o /dev/null -w \\\"GET / → %{http_code}\\\\n\\\" http...",
+  "error": "Exit code 7\n\u001b[32m[PM2] \u001b[39m[dashboard](6) ✓\nGET / → 000",
+  "timestamp": "2026-07-12T08:59:11.681Z",
+  "retry_count": 1
+}

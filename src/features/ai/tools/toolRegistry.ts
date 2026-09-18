@@ -64,15 +64,11 @@ import {
   setRolePermissionsTool,
 } from './tools/roleManageTools'
 import { listRolesTool, lookupRoleTool } from './tools/roleTools'
-import {
-  cancelScheduledTaskTool,
-  listScheduledTasksTool,
-  scheduleTaskTool,
-} from './tools/scheduleTools'
 import { sendMessageTool } from './tools/sendMessageTool'
 import { sendStickerTool } from './tools/sendStickerTool'
 import { getServerInfoTool } from './tools/serverTools'
 import { getStickerTool } from './tools/stickerTools'
+import { configureTempVoiceTool } from './tools/tempVoiceTool'
 import { editThreadTool, readThreadMessagesTool } from './tools/threadTools'
 import {
   disconnectAllMembersTool,
@@ -100,6 +96,7 @@ export function createToolRegistry(client: Client): ToolRegistry {
   register(readForumPostTool(client))
   register(createForumTool(client))
   register(getServerInfoTool(client))
+  register(configureTempVoiceTool(client))
   register(lookupMemberTool(client))
   register(voiceMemberLookupTool(client))
   register(voiceActionTool(client))
@@ -138,9 +135,6 @@ export function createToolRegistry(client: Client): ToolRegistry {
   register(reactMessageTool(client))
   register(searchMessagesTool(client))
   register(saveMemoryTool)
-  register(scheduleTaskTool)
-  register(listScheduledTasksTool)
-  register(cancelScheduledTaskTool)
   register(playMusicTool(client))
   register(stopMusicTool(client))
   register(pauseMusicTool(client))

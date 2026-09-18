@@ -40,7 +40,7 @@ export function createLavalinkNodeOptions(
   return {
     authorization: input.password,
     host: input.host,
-    id: `fullmoon-${input.host}-${input.port}`,
+    id: `lisybot-${input.host}-${input.port}`,
     port: input.port,
     secure: input.secure,
   }

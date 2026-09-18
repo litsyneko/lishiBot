@@ -3,12 +3,14 @@ import type { ChatMessage } from './aiPolicy'
 import type { ToolRecord } from './aiPolicy'
 import { getSupabase } from './supabase'
 
-const SESSION_TTL_MS = 2 * 60 * 60 * 1000
-const MAX_HISTORY_PER_SESSION = 20
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000
+// 세션당 대화 저장 상한. 프롬프트에 넣을 때는 providerCore가 컨텍스트 예산(토큰)으로
+// 한 번 더 자르므로, 이 값은 저장 상한이자 예산이 담을 수 있는 최대치의 안전망이다.
+const MAX_HISTORY_PER_SESSION = 200
 const MAX_TOOL_HISTORY = 100
 const MAX_TOOL_HISTORY_PROMPT_RECORDS = 8
 const MAX_TOOL_HISTORY_FIELD_LENGTH = 240
-const ORPHAN_SESSION_TTL_MS = 6 * 60 * 60 * 1000
+const ORPHAN_SESSION_TTL_MS = 24 * 60 * 60 * 1000
 
 const SESSIONS_TABLE = 'ai_sessions'
 const MESSAGES_TABLE = 'ai_session_messages'

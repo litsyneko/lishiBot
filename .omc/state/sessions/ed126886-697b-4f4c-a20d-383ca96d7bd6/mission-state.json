@@ -1,0 +1,77 @@
+{
+  "updatedAt": "2026-07-15T14:54:45.772Z",
+  "missions": [
+    {
+      "id": "session:ed126886-697b-4f4c-a20d-383ca96d7bd6:none",
+      "source": "session",
+      "name": "none",
+      "objective": "Session mission",
+      "createdAt": "2026-07-15T14:20:16.927Z",
+      "updatedAt": "2026-07-15T14:54:45.772Z",
+      "status": "done",
+      "workerCount": 1,
+      "taskCounts": {
+        "total": 1,
+        "pending": 0,
+        "blocked": 0,
+        "inProgress": 0,
+        "completed": 1,
+        "failed": 0
+      },
+      "agents": [
+        {
+          "name": "bot-features-survey:abot-fe",
+          "role": "bot-features-survey",
+          "ownership": "abot-features-survey-cd43d50e43521f85",
+          "status": "done",
+          "currentStep": null,
+          "latestUpdate": "completed",
+          "completedSummary": null,
+          "updatedAt": "2026-07-15T14:54:45.772Z"
+        }
+      ],
+      "timeline": [
+        {
+          "id": "session-start:abot-features-survey-cd43d50e43521f85:2026-07-15T14:20:16.927Z",
+          "at": "2026-07-15T14:20:16.927Z",
+          "kind": "update",
+          "agent": "bot-features-survey:abot-fe",
+          "detail": "started bot-features-survey:abot-fe",
+          "sourceKey": "session-start:abot-features-survey-cd43d50e43521f85"
+        },
+        {
+          "id": "session-stop:abot-features-survey-cd43d50e43521f85:2026-07-15T14:23:56.741Z",
+          "at": "2026-07-15T14:23:56.741Z",
+          "kind": "completion",
+          "agent": "bot-features-survey:abot-fe",
+          "detail": "completed",
+          "sourceKey": "session-stop:abot-features-survey-cd43d50e43521f85"
+        },
+        {
+          "id": "session-start:abot-features-survey-cd43d50e43521f85:2026-07-15T14:24:16.747Z",
+          "at": "2026-07-15T14:24:16.747Z",
+          "kind": "update",
+          "agent": "bot-features-survey:abot-fe",
+          "detail": "started bot-features-survey:abot-fe",
+          "sourceKey": "session-start:abot-features-survey-cd43d50e43521f85"
+        },
+        {
+          "id": "session-stop:abot-features-survey-cd43d50e43521f85:2026-07-15T14:25:26.053Z",
+          "at": "2026-07-15T14:25:26.053Z",
+          "kind": "completion",
+          "agent": "bot-features-survey:abot-fe",
+          "detail": "completed",
+          "sourceKey": "session-stop:abot-features-survey-cd43d50e43521f85"
+        },
+        {
+          "id": "session-stop:a7382b0aa49df9c74:2026-07-15T14:54:45.772Z",
+          "at": "2026-07-15T14:54:45.772Z",
+          "kind": "completion",
+          "agent": "bot-features-survey:abot-fe",
+          "detail": "completed",
+          "sourceKey": "session-stop:a7382b0aa49df9c74"
+        }
+      ]
+    }
+  ]
+}

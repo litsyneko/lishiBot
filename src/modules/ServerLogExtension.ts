@@ -1,30 +1,45 @@
 import {
+  primeGuildInvites,
+  resolveJoinInvite,
+  trackInviteCreate,
+  trackInviteDelete,
+} from '../features/serverLogs/inviteTracker'
+import {
+  SERVER_LOG_CATEGORIES,
   type ServerLogCategory,
   categoryForAuditAction,
   isServerLogCategory,
 } from '../features/serverLogs/serverLogCategories'
 import {
-  type MemberActivity,
-  type MessageActivity,
-  type ReactionActivity,
+  type SendableLogChannel,
+  enqueueServerLog,
+} from '../features/serverLogs/serverLogDispatcher'
+import {
+  describeBulkDelete,
   describeMemberJoin,
   describeMemberLeave,
   describeMessageDelete,
   describeMessageEdit,
   describeReactionAdd,
+  describeReactionClearAll,
+  describeReactionClearEmoji,
   describeReactionRemove,
   detectVoiceActivity,
+  hasLoggableMessageEdit,
+  recordDeleteAuditEntry,
+  resolveMessageDeleter,
 } from '../features/serverLogs/serverLogEvents'
 import {
+  buildBulkDeleteLogMessage,
   buildMemberLogMessage,
   buildMessageLogMessage,
+  buildReactionClearLogMessage,
   buildReactionLogMessage,
   buildServerLogMessage,
   buildVoiceLogMessage,
 } from '../features/serverLogs/serverLogMessage'
 import {
   SERVER_LOG_COMPONENT_PREFIX,
-  SERVER_LOG_PAGE_COUNT,
   buildCancelledServerLogPanel,
   buildExpiredServerLogPanel,
   buildSavedServerLogPanel,
@@ -42,41 +57,49 @@ import {
 } from '../features/serverLogs/serverLogSettings'
 import { logger } from '../utils/logger'
 import { requireServerManager } from '../utils/permissions'
+import type { ClanTagLogEntry } from './ClanTagExtension'
 import { Extension, applicationCommand, listener } from '@pikokr/command.ts'
 import {
   ApplicationCommandType,
+  AttachmentBuilder,
   ChatInputCommandInteraction,
-  type Client,
   type Collection,
+  ContainerBuilder,
   Events,
   Guild,
   GuildAuditLogsEntry,
   type GuildBasedChannel,
   type GuildMember,
   Interaction,
+  type Invite,
   Message,
   MessageComponentInteraction,
   MessageFlags,
   type MessageReaction,
   NewsChannel,
+  type PartialGuildMember,
   type PartialMessage,
   type PartialMessageReaction,
   type PartialUser,
   PermissionFlagsBits,
   TextChannel,
+  TextDisplayBuilder,
   type User,
   VoiceState,
 } from 'discord.js'
 
 const SESSION_TIMEOUT_MS = 3 * 60 * 1000
+const BULK_TRANSCRIPT_FILE_NAME = 'deleted-messages.txt'
 
 type PanelSession = {
   readonly guildId: string
-  page: number
   timeoutHandle: NodeJS.Timeout
 }
 
 const panelSessions = new Map<string, PanelSession>()
+
+// 목록 뷰에서 카테고리를 골랐을 때 편집 뷰로 전환하기 위한 임시 상태 (길드별)
+const editingCategories = new Map<string, ServerLogCategory>()
 
 class ServerLogExtensionClass extends Extension {
   private loaded = false
@@ -94,6 +117,25 @@ class ServerLogExtensionClass extends Extension {
         `설정 로드 실패: ${err instanceof Error ? err.message : String(err)}`
       )
     }
+
+    for (const guild of this.client.guilds.cache.values()) {
+      void primeGuildInvites(guild)
+    }
+  }
+
+  @listener({ event: Events.GuildCreate })
+  async onGuildCreate(guild: Guild): Promise<void> {
+    await primeGuildInvites(guild)
+  }
+
+  @listener({ event: Events.InviteCreate })
+  async onInviteCreate(invite: Invite): Promise<void> {
+    trackInviteCreate(invite)
+  }
+
+  @listener({ event: Events.InviteDelete })
+  async onInviteDelete(invite: Invite): Promise<void> {
+    trackInviteDelete(invite)
   }
 
   @applicationCommand({
@@ -107,8 +149,8 @@ class ServerLogExtensionClass extends Extension {
 
     const draft = getDraftServerLogSettings(i.guild.id)
     const draftPending = hasDraft(i.guild.id)
-    await i.reply(buildServerLogPanel(draft, 0, draftPending))
-    registerSession(i.guild.id, 0, i)
+    await i.reply(buildServerLogPanel(draft, draftPending, i.guild.id, null))
+    registerSession(i.guild.id, i)
   }
 
   @listener({ event: 'interactionCreate' })
@@ -135,15 +177,22 @@ class ServerLogExtensionClass extends Extension {
     }
 
     if (result.kind === 'saved') {
-      await interaction.update(buildSavedServerLogPanel(result.settings))
+      await interaction.update(
+        buildSavedServerLogPanel(result.settings, guildId)
+      )
       clearSession(guildId)
       return
     }
 
     await interaction.update(
-      buildServerLogPanel(result.settings, result.page, hasDraft(guildId))
+      buildServerLogPanel(
+        result.settings,
+        hasDraft(guildId),
+        guildId,
+        editingCategories.get(guildId) ?? null
+      )
     )
-    refreshSession(guildId, result.page, interaction)
+    refreshSession(guildId, interaction)
   }
 
   @listener({ event: 'guildAuditLogEntryCreate' })
@@ -151,30 +200,24 @@ class ServerLogExtensionClass extends Extension {
     entry: GuildAuditLogsEntry,
     guild: Guild
   ): Promise<void> {
+    // MessageDelete 항목은 카테고리 매핑이 없어도 삭제자 귀속 캐시에 기록한다.
+    recordDeleteAuditEntry(guild, entry)
+
     const category = categoryForAuditAction(entry.action)
     if (category === null) return
 
     try {
-      const settings = await getServerLogSettings(guild.id)
-      if (!settings.enabled) return
+      const destination = await resolveLogDestination(guild, category)
+      if (destination === null) return
 
-      const channelId = settings.categoryChannels[category]
-      if (channelId === null || channelId === undefined) return
-
-      const channel = guild.channels.cache.get(channelId)
-      if (!isSendableLogChannel(channel)) return
-
-      await channel.send({
-        allowedMentions: { parse: [] },
-        components: [
-          buildServerLogMessage(entry, category, guild, this.client),
-        ],
-        flags: MessageFlags.IsComponentsV2,
-      })
+      enqueueServerLog(
+        destination.channel,
+        buildServerLogMessage(entry, category, guild, this.client)
+      )
     } catch (err) {
       logger.error(
         'ServerLog',
-        `감사 로그 전송 실패: ${
+        `감사 로그 처리 실패: ${
           err instanceof Error ? err.message : String(err)
         }`
       )
@@ -186,30 +229,68 @@ class ServerLogExtensionClass extends Extension {
     oldMessage: Message | PartialMessage,
     newMessage: Message | PartialMessage
   ): Promise<void> {
-    if (oldMessage.guild === null || oldMessage.author?.bot === true) return
+    // 판정은 fetch 전 원본(raw) 이벤트 기준으로 해야 한다. fetch로 승격된
+    // 메시지는 과거 편집의 edited_timestamp까지 실어와 오탐을 만든다.
+    if (!hasLoggableMessageEdit(oldMessage, newMessage)) return
 
-    const guild = oldMessage.guild
-    if (oldMessage.content === newMessage.content) return
+    const fullNew = newMessage.partial
+      ? await newMessage.fetch().catch(() => null)
+      : newMessage
+    if (fullNew === null) return
+    if (fullNew.guild === null) return
+    if (fullNew.author.bot) return
 
-    await sendMessageLog(
-      guild,
-      describeMessageEdit(oldMessage, newMessage),
-      'messages',
-      this.client
+    const guild = fullNew.guild
+    const destination = await resolveLogDestination(guild, 'messages')
+    if (destination === null) return
+    if (
+      isExcludedChannel(destination.settings, fullNew.channelId) ||
+      isExcludedUser(destination.settings, fullNew.author.id) ||
+      isExcludedMember(destination.settings, fullNew.member)
+    ) {
+      return
+    }
+
+    enqueueServerLog(
+      destination.channel,
+      buildMessageLogMessage(
+        describeMessageEdit(oldMessage, fullNew),
+        'messages',
+        guild,
+        this.client
+      )
     )
   }
 
   @listener({ event: Events.MessageDelete })
   async onMessageDelete(message: Message | PartialMessage): Promise<void> {
-    if (message.guild === null || message.author?.bot === true) return
-
+    if (message.guild === null) return
     const guild = message.guild
 
-    await sendMessageLog(
-      guild,
-      describeMessageDelete(message),
-      'messages',
-      this.client
+    // 봇 자신의 하우스키핑(승인 카드 자동 제거 등)은 기록하지 않는다.
+    const selfId = this.client.user?.id ?? null
+    if (selfId !== null && message.author?.id === selfId) return
+
+    const destination = await resolveLogDestination(guild, 'messages')
+    if (destination === null) return
+    if (
+      isExcludedChannel(destination.settings, message.channelId) ||
+      isExcludedUser(destination.settings, message.author?.id ?? null) ||
+      isExcludedMember(destination.settings, message.member)
+    ) {
+      return
+    }
+
+    const attribution = await resolveMessageDeleter(guild, message, Date.now())
+
+    enqueueServerLog(
+      destination.channel,
+      buildMessageLogMessage(
+        describeMessageDelete(message, attribution),
+        'messages',
+        guild,
+        this.client
+      )
     )
   }
 
@@ -218,21 +299,48 @@ class ServerLogExtensionClass extends Extension {
     messages: Collection<string, Message | PartialMessage>,
     channel: GuildBasedChannel
   ): Promise<void> {
-    if (channel.guild === undefined) return
     const guild = channel.guild
+    if (guild === undefined) return
 
-    const activity: MessageActivity = {
-      authorId: null,
-      authorTag: null,
-      channelId: channel.id,
-      count: messages.size,
-      kind: 'bulkDelete',
-      messageId: 'bulk',
-      newContent: null,
-      oldContent: null,
+    const destination = await resolveLogDestination(guild, 'messages')
+    if (destination === null) return
+    if (isExcludedChannel(destination.settings, channel.id)) return
+
+    const details = describeBulkDelete(channel, messages)
+    const transcriptFileName =
+      details.transcript !== null ? BULK_TRANSCRIPT_FILE_NAME : null
+
+    const container = buildBulkDeleteLogMessage(
+      details,
+      'messages',
+      guild,
+      this.client,
+      transcriptFileName
+    )
+
+    // 트랜스크립트 파일이 붙는 로그는 배칭하지 않고 바로 보낸다.
+    try {
+      await destination.channel.send({
+        allowedMentions: { parse: [] },
+        components: [container],
+        files:
+          details.transcript !== null && transcriptFileName !== null
+            ? [
+                new AttachmentBuilder(Buffer.from(details.transcript, 'utf8'), {
+                  name: transcriptFileName,
+                }),
+              ]
+            : [],
+        flags: MessageFlags.IsComponentsV2,
+      })
+    } catch (err) {
+      logger.error(
+        'ServerLog',
+        `일괄 삭제 로그 전송 실패: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      )
     }
-
-    await sendMessageLog(guild, activity, 'messages', this.client)
   }
 
   @listener({ event: Events.VoiceStateUpdate })
@@ -240,50 +348,74 @@ class ServerLogExtensionClass extends Extension {
     oldState: VoiceState,
     newState: VoiceState
   ): Promise<void> {
-    if (oldState.guild === undefined) return
     const guild = oldState.guild
+    if (guild === undefined) return
 
     const activity = detectVoiceActivity(oldState, newState)
     if (activity === null) return
 
-    const settings = await getServerLogSettings(guild.id)
-    if (!settings.enabled) return
-
-    const channelId = settings.categoryChannels.voice
-    if (channelId === null || channelId === undefined) return
-
-    const logChannel = guild.channels.cache.get(channelId)
-    if (!isSendableLogChannel(logChannel)) return
-
-    try {
-      await logChannel.send({
-        allowedMentions: { parse: [] },
-        components: [
-          buildVoiceLogMessage(activity, 'voice', guild, this.client),
-        ],
-        flags: MessageFlags.IsComponentsV2,
-      })
-    } catch (err) {
-      logger.error(
-        'ServerLog',
-        `음성 로그 전송 실패: ${
-          err instanceof Error ? err.message : String(err)
-        }`
-      )
+    const destination = await resolveLogDestination(guild, 'voice')
+    if (destination === null) return
+    if (
+      isExcludedChannel(destination.settings, activity.channelId) ||
+      isExcludedChannel(destination.settings, activity.fromChannelId) ||
+      isExcludedUser(destination.settings, activity.memberId) ||
+      isExcludedMember(destination.settings, newState.member)
+    ) {
+      return
     }
+
+    enqueueServerLog(
+      destination.channel,
+      buildVoiceLogMessage(activity, 'voice', guild, this.client)
+    )
   }
+
   @listener({ event: Events.GuildMemberAdd })
   async onGuildMemberAdd(member: GuildMember): Promise<void> {
     const guild = member.guild
-    const activity = describeMemberJoin(member)
-    await sendMemberLog(guild, activity, 'members', this.client)
+    // 로그가 꺼져 있어도 초대 사용량 캐시는 최신으로 유지해야
+    // 나중에 켰을 때 엉뚱한 초대로 귀속되지 않는다.
+    const invite = await resolveJoinInvite(guild)
+
+    const destination = await resolveLogDestination(guild, 'members')
+    if (destination === null) return
+    if (isExcludedUser(destination.settings, member.id)) return
+
+    enqueueServerLog(
+      destination.channel,
+      buildMemberLogMessage(
+        describeMemberJoin(member, invite),
+        'members',
+        guild,
+        this.client
+      )
+    )
   }
 
   @listener({ event: Events.GuildMemberRemove })
-  async onGuildMemberRemove(member: GuildMember): Promise<void> {
+  async onGuildMemberRemove(
+    member: GuildMember | PartialGuildMember
+  ): Promise<void> {
     const guild = member.guild
-    const activity = describeMemberLeave(member)
-    await sendMemberLog(guild, activity, 'members', this.client)
+    const destination = await resolveLogDestination(guild, 'members')
+    if (destination === null) return
+    if (
+      isExcludedUser(destination.settings, member.id) ||
+      isExcludedMember(destination.settings, member)
+    ) {
+      return
+    }
+
+    enqueueServerLog(
+      destination.channel,
+      buildMemberLogMessage(
+        describeMemberLeave(member),
+        'members',
+        guild,
+        this.client
+      )
+    )
   }
 
   @listener({ event: Events.MessageReactionAdd })
@@ -291,33 +423,29 @@ class ServerLogExtensionClass extends Extension {
     reaction: MessageReaction | PartialMessageReaction,
     user: User | PartialUser
   ): Promise<void> {
-    if (user.bot) return
-    const partialReaction = reaction.partial
+    if (user.bot === true) return
+    const fullReaction = reaction.partial
       ? await reaction.fetch().catch(() => null)
       : reaction
-    if (partialReaction === null) {
-      logger.warn('ServerLog', 'reaction fetch 실패')
-      return
-    }
+    if (fullReaction === null) return
     const fullUser = user.partial ? await user.fetch().catch(() => null) : user
     if (fullUser === null) return
 
-    const message = partialReaction.message
-    if (message.guildId === null) {
-      logger.warn('ServerLog', 'guildId가 null')
-      return
-    }
+    const message = fullReaction.message
+    if (message.guildId === null) return
 
     const guild = message.client.guilds.cache.get(message.guildId)
-    if (guild === undefined) {
-      logger.warn('ServerLog', `guild ${message.guildId} 캐시에 없음`)
-      return
-    }
+    if (guild === undefined) return
 
-    const activity = await describeReactionAdd(partialReaction, fullUser)
+    const activity = await describeReactionAdd(fullReaction, fullUser)
     if (activity === null) return
 
-    await sendReactionLog(guild, activity, 'expressions', this.client)
+    await this.sendReactionActivity(
+      guild,
+      activity.channelId,
+      fullUser.id,
+      () => buildReactionLogMessage(activity, 'expressions', guild, this.client)
+    )
   }
 
   @listener({ event: Events.MessageReactionRemove })
@@ -325,121 +453,159 @@ class ServerLogExtensionClass extends Extension {
     reaction: MessageReaction | PartialMessageReaction,
     user: User | PartialUser
   ): Promise<void> {
-    if (user.bot) return
-    const partialReaction = reaction.partial
+    if (user.bot === true) return
+    const fullReaction = reaction.partial
       ? await reaction.fetch().catch(() => null)
       : reaction
-    if (partialReaction === null) return
+    if (fullReaction === null) return
     const fullUser = user.partial ? await user.fetch().catch(() => null) : user
     if (fullUser === null) return
 
-    const message = partialReaction.message
+    const message = fullReaction.message
     if (message.guildId === null) return
 
     const guild = message.client.guilds.cache.get(message.guildId)
     if (guild === undefined) return
 
-    const activity = await describeReactionRemove(partialReaction, fullUser)
+    const activity = await describeReactionRemove(fullReaction, fullUser)
     if (activity === null) return
 
-    await sendReactionLog(guild, activity, 'expressions', this.client)
+    await this.sendReactionActivity(
+      guild,
+      activity.channelId,
+      fullUser.id,
+      () => buildReactionLogMessage(activity, 'expressions', guild, this.client)
+    )
   }
-}
 
-async function sendMessageLog(
-  guild: Guild,
-  activity: MessageActivity,
-  category: ServerLogCategory,
-  client: Client
-): Promise<void> {
-  const settings = await getServerLogSettings(guild.id)
-  if (!settings.enabled) return
+  @listener({ event: Events.MessageReactionRemoveAll })
+  async onMessageReactionRemoveAll(
+    message: Message | PartialMessage,
+    reactions: Collection<string, MessageReaction>
+  ): Promise<void> {
+    if (message.guildId === null) return
+    const guild = message.client.guilds.cache.get(message.guildId)
+    if (guild === undefined) return
 
-  const channelId = settings.categoryChannels[category]
-  if (channelId === null || channelId === undefined) return
+    const activity = describeReactionClearAll(message, reactions)
+    await this.sendReactionActivity(guild, activity.channelId, null, () =>
+      buildReactionClearLogMessage(activity, 'expressions', guild, this.client)
+    )
+  }
 
-  const logChannel = guild.channels.cache.get(channelId)
-  if (!isSendableLogChannel(logChannel)) return
+  @listener({ event: Events.MessageReactionRemoveEmoji })
+  async onMessageReactionRemoveEmoji(
+    reaction: MessageReaction | PartialMessageReaction
+  ): Promise<void> {
+    const message = reaction.message
+    if (message.guildId === null) return
+    const guild = message.client.guilds.cache.get(message.guildId)
+    if (guild === undefined) return
 
-  try {
-    await logChannel.send({
-      allowedMentions: { parse: [] },
-      components: [buildMessageLogMessage(activity, category, guild, client)],
-      flags: MessageFlags.IsComponentsV2,
-    })
-  } catch (err) {
-    logger.error(
-      'ServerLog',
-      `메시지 로그 전송 실패: ${
-        err instanceof Error ? err.message : String(err)
-      }`
+    const activity = describeReactionClearEmoji(reaction)
+    await this.sendReactionActivity(guild, activity.channelId, null, () =>
+      buildReactionClearLogMessage(activity, 'expressions', guild, this.client)
+    )
+  }
+
+  private async sendReactionActivity(
+    guild: Guild,
+    channelId: string,
+    userId: string | null,
+    build: () => ContainerBuilder
+  ): Promise<void> {
+    const destination = await resolveLogDestination(guild, 'expressions')
+    if (destination === null) return
+    if (
+      isExcludedChannel(destination.settings, channelId) ||
+      isExcludedUser(destination.settings, userId)
+    ) {
+      return
+    }
+
+    enqueueServerLog(destination.channel, build())
+  }
+
+  @listener({ event: 'clanTagChange' as never })
+  async onClanTagChange(entry: ClanTagLogEntry): Promise<void> {
+    const guild = entry.member.guild
+    const destination = await resolveLogDestination(guild, 'clantag')
+    if (destination === null) return
+
+    const tagLabel =
+      entry.action === 'added'
+        ? `서버 태그 적용: **${entry.newTag ?? '알 수 없음'}**`
+        : `서버 태그 해제${entry.oldTag ? ` (이전: **${entry.oldTag}**)` : ''}`
+
+    const timestamp = `<t:${Math.floor(Date.now() / 1000)}:F>`
+
+    enqueueServerLog(
+      destination.channel,
+      new ContainerBuilder()
+        .setAccentColor(entry.action === 'added' ? 0x2ecc71 : 0xe74c3c)
+        .addTextDisplayComponents(
+          new TextDisplayBuilder().setContent(
+            `### 🏷️ 서버 태그 변경\n${entry.member.toString()} (${
+              entry.member.user.tag
+            })\n${tagLabel}\n-# ${timestamp}`
+          )
+        )
     )
   }
 }
 
-async function sendMemberLog(
-  guild: Guild,
-  activity: MemberActivity,
-  category: ServerLogCategory,
-  client: Client
-): Promise<void> {
-  const settings = await getServerLogSettings(guild.id)
-  if (!settings.enabled) return
-
-  const channelId = settings.categoryChannels[category]
-  if (channelId === null || channelId === undefined) return
-
-  const logChannel = guild.channels.cache.get(channelId)
-  if (!isSendableLogChannel(logChannel)) return
-
-  try {
-    await logChannel.send({
-      allowedMentions: { parse: [] },
-      components: [buildMemberLogMessage(activity, category, guild, client)],
-      flags: MessageFlags.IsComponentsV2,
-    })
-  } catch (err) {
-    logger.error(
-      'ServerLog',
-      `멤버 로그 전송 실패: ${err instanceof Error ? err.message : String(err)}`
-    )
-  }
+type LogDestination = {
+  readonly channel: SendableLogChannel
+  readonly settings: ServerLogSettings
 }
 
-async function sendReactionLog(
+async function resolveLogDestination(
   guild: Guild,
-  activity: ReactionActivity,
-  category: ServerLogCategory,
-  client: Client
-): Promise<void> {
+  category: ServerLogCategory
+): Promise<LogDestination | null> {
   const settings = await getServerLogSettings(guild.id)
-  if (!settings.enabled) return
+  if (!settings.enabled) return null
 
   const channelId = settings.categoryChannels[category]
-  if (channelId === null || channelId === undefined) return
+  if (channelId === null || channelId === undefined) return null
 
-  const logChannel = guild.channels.cache.get(channelId)
-  if (!isSendableLogChannel(logChannel)) return
+  const channel = guild.channels.cache.get(channelId)
+  if (!isSendableLogChannel(channel)) return null
 
-  try {
-    await logChannel.send({
-      allowedMentions: { parse: [] },
-      components: [buildReactionLogMessage(activity, category, guild, client)],
-      flags: MessageFlags.IsComponentsV2,
-    })
-  } catch (err) {
-    logger.error(
-      'ServerLog',
-      `반응 로그 전송 실패: ${err instanceof Error ? err.message : String(err)}`
-    )
-  }
+  return { channel, settings }
+}
+
+function isExcludedChannel(
+  settings: ServerLogSettings,
+  channelId: string | null
+): boolean {
+  if (channelId === null) return false
+  return settings.exclusions.channels.includes(channelId)
+}
+
+function isExcludedUser(
+  settings: ServerLogSettings,
+  userId: string | null
+): boolean {
+  if (userId === null) return false
+  return settings.exclusions.users.includes(userId)
+}
+
+function isExcludedMember(
+  settings: ServerLogSettings,
+  member: GuildMember | PartialGuildMember | null
+): boolean {
+  if (member === null) return false
+  if (settings.exclusions.roles.length === 0) return false
+  return settings.exclusions.roles.some((roleId) =>
+    member.roles.cache.has(roleId)
+  )
 }
 
 type InteractionResult =
   | {
       readonly kind: 'update'
       readonly settings: ReturnType<typeof getDraftServerLogSettings>
-      readonly page: number
     }
   | {
       readonly kind: 'saved'
@@ -452,72 +618,92 @@ async function handleSettingsInteraction(
   guildId: string
 ): Promise<InteractionResult> {
   const action = interaction.customId.slice(SERVER_LOG_COMPONENT_PREFIX.length)
-  const session = panelSessions.get(guildId)
-  const currentPage = session?.page ?? 0
+
+  // 목록 뷰에서 카테고리 선택 → 해당 카테고리의 채널 셀렉트 편집 뷰로 전환
+  if (interaction.isStringSelectMenu() && action === 'pick') {
+    const category = interaction.values[0]
+    if (category === undefined || !isServerLogCategory(category)) {
+      return { kind: 'update', settings: getDraftServerLogSettings(guildId) }
+    }
+    editingCategories.set(guildId, category)
+    return { kind: 'update', settings: getDraftServerLogSettings(guildId) }
+  }
+
+  if (interaction.isButton() && action === 'back') {
+    editingCategories.delete(guildId)
+    return { kind: 'update', settings: getDraftServerLogSettings(guildId) }
+  }
 
   if (interaction.isChannelSelectMenu() && action.startsWith('cat:')) {
     const category = action.slice('cat:'.length)
     if (!isServerLogCategory(category)) {
-      return {
-        kind: 'update',
-        page: currentPage,
-        settings: getDraftServerLogSettings(guildId),
-      }
+      return { kind: 'update', settings: getDraftServerLogSettings(guildId) }
     }
 
     const selectedId = interaction.values[0]
     const channelId = selectedId === undefined ? null : selectedId
 
+    // 채널을 지정했을 때만 자동으로 활성화한다. 해제는 상태를 바꾸지 않는다.
+    // 채널을 골랐으면 편집 뷰를 닫고 목록 뷰로 돌아간다.
     const settings = updateDraft(guildId, {
       categoryChannels: { [category]: channelId },
-      enabled: channelId !== undefined,
+      ...(channelId !== null ? { enabled: true } : {}),
     })
-    return { kind: 'update', page: currentPage, settings }
+    editingCategories.delete(guildId)
+    return { kind: 'update', settings }
   }
 
-  if (interaction.isButton() && action.startsWith('page:')) {
-    const requested = Number(action.slice('page:'.length))
-    const page = clampPage(requested)
-    return {
-      kind: 'update',
-      page,
-      settings: getDraftServerLogSettings(guildId),
-    }
+  if (interaction.isChannelSelectMenu() && action === 'ignore:channels') {
+    const settings = updateDraft(guildId, {
+      exclusions: { channels: [...interaction.values] },
+    })
+    return { kind: 'update', settings }
+  }
+
+  if (interaction.isUserSelectMenu() && action === 'ignore:users') {
+    const settings = updateDraft(guildId, {
+      exclusions: { users: [...interaction.values] },
+    })
+    return { kind: 'update', settings }
+  }
+
+  if (interaction.isRoleSelectMenu() && action === 'ignore:roles') {
+    const settings = updateDraft(guildId, {
+      exclusions: { roles: [...interaction.values] },
+    })
+    return { kind: 'update', settings }
   }
 
   if (interaction.isButton() && action === 'toggle') {
     const current = getDraftServerLogSettings(guildId)
     const settings = updateDraft(guildId, { enabled: !current.enabled })
-    return { kind: 'update', page: currentPage, settings }
+    return { kind: 'update', settings }
   }
 
   if (interaction.isButton() && action === 'clear') {
     const settings = updateDraft(guildId, {
       categoryChannels: emptyCategoryChannelMap(),
     })
-    return { kind: 'update', page: currentPage, settings }
+    return { kind: 'update', settings }
   }
 
   if (interaction.isButton() && action === 'save') {
+    editingCategories.delete(guildId)
     const settings = await commitDraft(guildId)
     return { kind: 'saved', settings }
   }
 
   if (interaction.isButton() && action === 'cancel') {
+    editingCategories.delete(guildId)
     discardDraft(guildId)
     return { kind: 'cancelled' }
   }
 
-  return {
-    kind: 'update',
-    page: currentPage,
-    settings: getDraftServerLogSettings(guildId),
-  }
+  return { kind: 'update', settings: getDraftServerLogSettings(guildId) }
 }
 
 function registerSession(
   guildId: string,
-  page: number,
   source: ChatInputCommandInteraction | MessageComponentInteraction
 ): void {
   const existing = panelSessions.get(guildId)
@@ -529,24 +715,14 @@ function registerSession(
     () => void expireSession(guildId, source),
     SESSION_TIMEOUT_MS
   )
-  panelSessions.set(guildId, { guildId, page, timeoutHandle: handle })
+  panelSessions.set(guildId, { guildId, timeoutHandle: handle })
 }
 
 function refreshSession(
   guildId: string,
-  page: number,
   source: MessageComponentInteraction
 ): void {
-  const existing = panelSessions.get(guildId)
-  if (existing !== undefined) {
-    clearTimeout(existing.timeoutHandle)
-  }
-
-  const handle = setTimeout(
-    () => void expireSession(guildId, source),
-    SESSION_TIMEOUT_MS
-  )
-  panelSessions.set(guildId, { guildId, page, timeoutHandle: handle })
+  registerSession(guildId, source)
 }
 
 function clearSession(guildId: string): void {
@@ -565,11 +741,15 @@ async function expireSession(
   if (session === undefined) return
 
   panelSessions.delete(guildId)
+  editingCategories.delete(guildId)
 
   const draftPending = hasDraft(guildId)
   if (draftPending) {
     const settings = await commitDraft(guildId)
-    await applyExpiredPanel(source, buildExpiredServerLogPanel(settings))
+    await applyExpiredPanel(
+      source,
+      buildExpiredServerLogPanel(settings, guildId)
+    )
   }
 }
 
@@ -601,10 +781,6 @@ async function fetchReplyMessage(
   return fetched as Message<true>
 }
 
-function clampPage(page: number): number {
-  return Math.max(0, Math.min(SERVER_LOG_PAGE_COUNT - 1, page))
-}
-
 function canManageServer(interaction: MessageComponentInteraction): boolean {
   const permissions = interaction.memberPermissions
   if (permissions === null) return false
@@ -622,8 +798,8 @@ function isSendableLogChannel(
 
 function emptyCategoryChannelMap(): Record<ServerLogCategory, string | null> {
   const result = {} as Record<ServerLogCategory, string | null>
-  for (const key of Object.keys(result) as ServerLogCategory[]) {
-    result[key] = null
+  for (const category of SERVER_LOG_CATEGORIES) {
+    result[category] = null
   }
   return result
 }

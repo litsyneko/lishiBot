@@ -1,0 +1,175 @@
+{
+  "updatedAt": "2026-07-12T15:05:58.979Z",
+  "missions": [
+    {
+      "id": "session:18283d0a-a197-4cc8-89ef-4f8d380eac46:none",
+      "source": "session",
+      "name": "none",
+      "objective": "Session mission",
+      "createdAt": "2026-07-11T01:59:10.621Z",
+      "updatedAt": "2026-07-12T15:05:58.979Z",
+      "status": "done",
+      "workerCount": 6,
+      "taskCounts": {
+        "total": 6,
+        "pending": 0,
+        "blocked": 0,
+        "inProgress": 0,
+        "completed": 6,
+        "failed": 0
+      },
+      "agents": [
+        {
+          "name": "ai-audit:aai-aud",
+          "role": "ai-audit",
+          "ownership": "aai-audit-7ece82d9622fedc9",
+          "status": "done",
+          "currentStep": null,
+          "latestUpdate": "completed",
+          "completedSummary": null,
+          "updatedAt": "2026-07-12T15:05:58.979Z"
+        },
+        {
+          "name": "music-audit:amusic-",
+          "role": "music-audit",
+          "ownership": "amusic-audit-517aeba62bf0db5f",
+          "status": "done",
+          "currentStep": null,
+          "latestUpdate": "completed",
+          "completedSummary": null,
+          "updatedAt": "2026-07-11T02:04:11.547Z"
+        },
+        {
+          "name": "economy-audit:aeconom",
+          "role": "economy-audit",
+          "ownership": "aeconomy-audit-c9612d78a21cd2c0",
+          "status": "done",
+          "currentStep": null,
+          "latestUpdate": "completed",
+          "completedSummary": null,
+          "updatedAt": "2026-07-11T02:05:48.809Z"
+        },
+        {
+          "name": "logs-audit:alogs-a",
+          "role": "logs-audit",
+          "ownership": "alogs-audit-0b190782ad6973fb",
+          "status": "done",
+          "currentStep": null,
+          "latestUpdate": "completed",
+          "completedSummary": null,
+          "updatedAt": "2026-07-11T02:06:57.616Z"
+        },
+        {
+          "name": "infra-audit:ainfra-",
+          "role": "infra-audit",
+          "ownership": "ainfra-audit-1b0e2d4fa9380072",
+          "status": "done",
+          "currentStep": null,
+          "latestUpdate": "completed",
+          "completedSummary": null,
+          "updatedAt": "2026-07-11T02:04:46.457Z"
+        },
+        {
+          "name": "design-review:adesign",
+          "role": "design-review",
+          "ownership": "adesign-review-b24ddbf85a80717d",
+          "status": "done",
+          "currentStep": null,
+          "latestUpdate": "completed",
+          "completedSummary": null,
+          "updatedAt": "2026-07-11T03:52:59.528Z"
+        }
+      ],
+      "timeline": [
+        {
+          "id": "session-stop:adcd4ffe33daeaacd:2026-07-11T03:18:53.229Z",
+          "at": "2026-07-11T03:18:53.229Z",
+          "kind": "completion",
+          "agent": "ai-audit:aai-aud",
+          "detail": "completed",
+          "sourceKey": "session-stop:adcd4ffe33daeaacd"
+        },
+        {
+          "id": "session-stop:a387658318601636f:2026-07-11T03:20:58.133Z",
+          "at": "2026-07-11T03:20:58.133Z",
+          "kind": "completion",
+          "agent": "ai-audit:aai-aud",
+          "detail": "completed",
+          "sourceKey": "session-stop:a387658318601636f"
+        },
+        {
+          "id": "session-start:adesign-review-b24ddbf85a80717d:2026-07-11T03:49:41.429Z",
+          "at": "2026-07-11T03:49:41.429Z",
+          "kind": "update",
+          "agent": "design-review:adesign",
+          "detail": "started design-review:adesign",
+          "sourceKey": "session-start:adesign-review-b24ddbf85a80717d"
+        },
+        {
+          "id": "session-stop:a1e664d84d8945082:2026-07-11T03:49:57.313Z",
+          "at": "2026-07-11T03:49:57.313Z",
+          "kind": "completion",
+          "agent": "ai-audit:aai-aud",
+          "detail": "completed",
+          "sourceKey": "session-stop:a1e664d84d8945082"
+        },
+        {
+          "id": "session-stop:adesign-review-b24ddbf85a80717d:2026-07-11T03:52:59.528Z",
+          "at": "2026-07-11T03:52:59.528Z",
+          "kind": "completion",
+          "agent": "design-review:adesign",
+          "detail": "completed",
+          "sourceKey": "session-stop:adesign-review-b24ddbf85a80717d"
+        },
+        {
+          "id": "session-stop:a4be51b1b490b2cc8:2026-07-12T10:10:56.287Z",
+          "at": "2026-07-12T10:10:56.287Z",
+          "kind": "completion",
+          "agent": "ai-audit:aai-aud",
+          "detail": "completed",
+          "sourceKey": "session-stop:a4be51b1b490b2cc8"
+        },
+        {
+          "id": "session-stop:a11b8456975a71ac5:2026-07-12T13:47:38.741Z",
+          "at": "2026-07-12T13:47:38.741Z",
+          "kind": "completion",
+          "agent": "ai-audit:aai-aud",
+          "detail": "completed",
+          "sourceKey": "session-stop:a11b8456975a71ac5"
+        },
+        {
+          "id": "session-stop:a0762fe34971225b1:2026-07-12T14:07:49.402Z",
+          "at": "2026-07-12T14:07:49.402Z",
+          "kind": "completion",
+          "agent": "ai-audit:aai-aud",
+          "detail": "completed",
+          "sourceKey": "session-stop:a0762fe34971225b1"
+        },
+        {
+          "id": "session-stop:acd5945c8552688f4:2026-07-12T14:17:06.171Z",
+          "at": "2026-07-12T14:17:06.171Z",
+          "kind": "completion",
+          "agent": "ai-audit:aai-aud",
+          "detail": "completed",
+          "sourceKey": "session-stop:acd5945c8552688f4"
+        },
+        {
+          "id": "session-stop:a1ee9bd5f267effa0:2026-07-12T14:41:12.585Z",
+          "at": "2026-07-12T14:41:12.585Z",
+          "kind": "completion",
+          "agent": "ai-audit:aai-aud",
+          "detail": "completed",
+          "sourceKey": "session-stop:a1ee9bd5f267effa0"
+        },
+        {
+          "id": "session-stop:af06e8c0381792c7f:2026-07-12T15:05:58.979Z",
+          "at": "2026-07-12T15:05:58.979Z",
+          "kind": "completion",
+          "agent": "ai-audit:aai-aud",
+          "detail": "completed",
+          "sourceKey": "session-stop:af06e8c0381792c7f"
+        }
+      ]
+    }
+  ]
+}

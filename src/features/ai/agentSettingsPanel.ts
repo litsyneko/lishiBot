@@ -1,4 +1,4 @@
-import type { ApprovalPolicy, HeartbeatConfig } from './serverProfile'
+import type { ApprovalPolicy } from './serverProfile'
 import {
   ActionRowBuilder,
   ButtonBuilder,
@@ -26,8 +26,6 @@ export const AGENT_CFG_MODAL_PREFIX = 'agentcfgModal:'
 
 export const AGENT_CFG_ACTIONS = {
   policy: 'policy',
-  hbToggle: 'hbToggle',
-  hbChannel: 'hbChannel',
   soulEdit: 'soulEdit',
   conceptEdit: 'conceptEdit',
   orderAdd: 'orderAdd',
@@ -53,7 +51,6 @@ export type AgentPanelData = {
   readonly soul: string | null
   readonly concept: string | null
   readonly dangerGate: ApprovalPolicy['dangerGate']
-  readonly heartbeat: HeartbeatConfig
   readonly standingOrders: readonly string[]
   readonly channelRoles: Record<string, string>
   // 채널 용도 편집 대상으로 선택해 둔 채널(없으면 null).
@@ -107,7 +104,6 @@ export function buildAgentSettingsPanel(
       buildHeaderContainer(accent, data),
       buildIdentityContainer(accent, data),
       buildPolicyContainer(accent, data),
-      buildHeartbeatContainer(accent, data),
       buildChannelRolesContainer(accent, data),
       buildSessionContainer(accent),
     ],
@@ -119,13 +115,6 @@ function buildHeaderContainer(
   accent: number,
   data: AgentPanelData
 ): ContainerBuilder {
-  const heartbeatText = data.heartbeat.enabled
-    ? `켜짐${
-        data.heartbeat.channelId !== null
-          ? ` · <#${data.heartbeat.channelId}>`
-          : ''
-      }`
-    : '꺼짐'
   const onboardingText =
     data.onboardedAt !== null
       ? `완료 (${data.onboardedAt.toLocaleDateString('ko-KR', {
@@ -145,7 +134,6 @@ function buildHeaderContainer(
       new TextDisplayBuilder().setContent(
         [
           `- 위험 작업 승인: **${DANGER_GATE_LABELS[data.dangerGate]}**`,
-          `- 자동 발화: **${heartbeatText}**`,
           `- 활성 세션: **${data.activeSessions}개** · 승인 대기: **${data.pendingApprovals}건**`,
           `- 온보딩: **${onboardingText}**`,
         ].join('\n')
@@ -248,36 +236,6 @@ function buildPolicyContainer(
     )
 }
 
-function buildHeartbeatContainer(
-  accent: number,
-  data: AgentPanelData
-): ContainerBuilder {
-  const toggle = new ButtonBuilder()
-    .setCustomId(cid(AGENT_CFG_ACTIONS.hbToggle))
-    .setLabel(data.heartbeat.enabled ? '자동 발화 끄기' : '자동 발화 켜기')
-    .setStyle(
-      data.heartbeat.enabled ? ButtonStyle.Secondary : ButtonStyle.Success
-    )
-
-  return new ContainerBuilder()
-    .setAccentColor(accent)
-    .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(
-        '### 🔔 자동 발화 (heartbeat)\n-# 에이전트가 먼저 말 거는 기능. 조용 시간(23~8시) 제외, 하루 최대 4회, 30분 간격 확인. 기본은 꺼짐이에요.'
-      )
-    )
-    .addActionRowComponents(
-      new ActionRowBuilder<ButtonBuilder>().addComponents(toggle)
-    )
-    .addActionRowComponents(
-      textChannelSelect(
-        AGENT_CFG_ACTIONS.hbChannel,
-        '자동 발화할 채널 선택',
-        data.heartbeat.channelId
-      )
-    )
-}
-
 function buildChannelRolesContainer(
   accent: number,
   data: AgentPanelData
@@ -365,7 +323,7 @@ export function buildSoulModal(current: string | null): ModalBuilder {
           new TextInputBuilder()
             .setCustomId('value')
             .setPlaceholder(
-              '예: 나는 풀문 서버의 도우미 코하루. 다정하지만 위험한 일은 신중하게.'
+              '예: 나는 리시봇 서버의 도우미 리시. 다정하지만 위험한 일은 신중하게.'
             )
             .setStyle(TextInputStyle.Paragraph)
             .setRequired(false)

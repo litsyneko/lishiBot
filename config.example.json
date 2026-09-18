@@ -9,10 +9,34 @@
     "secure": false
   },
   "ai": {
-    "provider": "disabled",
-    "geminiApiKey": "YOUR_GEMINI_API_KEY",
-    "apiKey": "YOUR_OPENCODE_ZEN_API_KEY",
-    "model": "deepseek-v4-flash-free"
+    "primary": {
+      "provider": "openai-compatible",
+      "label": "GLM(zai-proxy)",
+      "apiKey": "API_KEY_OR_PLACEHOLDER_FOR_LOCAL_PROXY",
+      "model": "glm-5.2",
+      "baseUrl": "http://localhost:18088/v1",
+      "reasoningEffort": "high"
+    },
+    "fallbacks": [
+      {
+        "provider": "openai-compatible",
+        "label": "Lisy LLM",
+        "apiKey": "local",
+        "model": "gemma4:e4b",
+        "baseUrl": "http://localhost:11434/v1"
+      }
+    ],
+    "contextTokens": 1048576
+  },
+  "tts": {
+    "token": "SECOND_BOT_TOKEN_FOR_TTS",
+    "clientId": "SECOND_BOT_APPLICATION_ID",
+    "port": 8787
+  },
+  "elevenLabs": {
+    "apiKey": "YOUR_ELEVENLABS_API_KEY",
+    "voiceId": "YOUR_ELEVENLABS_VOICE_ID",
+    "modelId": "eleven_v3"
   },
   "economy": {
     "databasePath": "./data/economy.db"

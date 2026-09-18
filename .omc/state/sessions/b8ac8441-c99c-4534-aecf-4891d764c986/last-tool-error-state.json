@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"sed -n 40,60p package.json; echo ===; cat data/migrations/011_server_log_settings.sql; echo ===; grep -n \\\"severityTimeoutMs\\\" src/features/moderation/*.ts | head -5; echo ===; grep -rn \\\"...",
+  "error": "Exit code 1\n  },\n  \"scripts\": {\n    \"build\": \"tsc\",\n    \"dev\": \"ts-node --swc src\",\n    \"dev:tts\": \"ts-node --swc src/tts\",\n    \"start\": \"node dist\",\n    \"start:tts\": \"node dist/tts\",\n    \"lint\": \"eslint src --ignore-path .gitignore\"\n  },\n  \"packageManager\": \"pnpm@8.3.1\"\n}\n(eval):1: == not found",
+  "timestamp": "2026-07-10T06:08:37.188Z",
+  "retry_count": 1
+}

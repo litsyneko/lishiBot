@@ -50,6 +50,25 @@ const gamblingGroup = new SubCommandGroup({
 const economy = createEconomyService()
 const rng = () => randomInt(0, 1000000) / 1000000
 
+type WinResolution = {
+  readonly payout: number
+}
+
+async function resolveWinnings(
+  guildId: string,
+  userId: string,
+  win: boolean,
+  basePayout: number
+): Promise<WinResolution> {
+  const payout = basePayout
+
+  if (win && payout > 0) {
+    await economy.addBalance(guildId, userId, payout)
+  }
+
+  return { payout }
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -125,8 +144,13 @@ class GamblingExtensionClass extends Extension {
     })
     bet: number
   ) {
+    const guildId = i.guildId
+    if (guildId === null) {
+      await replyEphemeral(i, '이 명령어는 서버에서만 사용할 수 있어요.')
+      return
+    }
     try {
-      const balance = await economy.getBalance(i.user.id)
+      const balance = await economy.getBalance(guildId, i.user.id)
       if (balance.amount < bet) {
         await replyEphemeral(
           i,
@@ -137,6 +161,7 @@ class GamblingExtensionClass extends Extension {
 
       await economy.transfer({
         amount: bet,
+        guildId,
         fromUserId: i.user.id,
         toUserId: '0',
       })
@@ -144,13 +169,16 @@ class GamblingExtensionClass extends Extension {
       const target = 50
       const result = playRollDice({ random: rng, target, bet })
 
-      if (result.win) {
-        await economy.addBalance(i.user.id, result.payout)
-      }
+      const { payout } = await resolveWinnings(
+        guildId,
+        i.user.id,
+        result.win,
+        result.payout
+      )
 
-      await economy.recordGamble(i.user.id, bet, result.payout, result.win)
+      await economy.recordGamble(guildId, i.user.id, bet, payout, result.win)
       try {
-        await economy.recordQuestProgress(i.user.id, 'gamble')
+        await economy.recordQuestProgress(guildId, i.user.id, 'gamble')
       } catch (err) {
         logger.warn(
           'Gambling',
@@ -165,7 +193,7 @@ class GamblingExtensionClass extends Extension {
         result.roll,
         bet,
         result.win,
-        result.payout,
+        payout,
         result.multiplier
       )
     } catch (err) {
@@ -191,8 +219,13 @@ class GamblingExtensionClass extends Extension {
     })
     bet: number
   ) {
+    const guildId = i.guildId
+    if (guildId === null) {
+      await replyEphemeral(i, '이 명령어는 서버에서만 사용할 수 있어요.')
+      return
+    }
     try {
-      const balance = await economy.getBalance(i.user.id)
+      const balance = await economy.getBalance(guildId, i.user.id)
       if (balance.amount < bet) {
         await replyEphemeral(
           i,
@@ -203,19 +236,23 @@ class GamblingExtensionClass extends Extension {
 
       await economy.transfer({
         amount: bet,
+        guildId,
         fromUserId: i.user.id,
         toUserId: '0',
       })
 
       const result = playSlot({ random: rng, bet })
 
-      if (result.win) {
-        await economy.addBalance(i.user.id, result.payout)
-      }
+      const { payout } = await resolveWinnings(
+        guildId,
+        i.user.id,
+        result.win,
+        result.payout
+      )
 
-      await economy.recordGamble(i.user.id, bet, result.payout, result.win)
+      await economy.recordGamble(guildId, i.user.id, bet, payout, result.win)
       try {
-        await economy.recordQuestProgress(i.user.id, 'gamble')
+        await economy.recordQuestProgress(guildId, i.user.id, 'gamble')
       } catch (err) {
         logger.warn(
           'Gambling',
@@ -232,7 +269,7 @@ class GamblingExtensionClass extends Extension {
         result.win,
         result.matchCount,
         result.multiplier,
-        result.payout
+        payout
       )
     } catch (err) {
       await replyEphemeral(
@@ -264,8 +301,13 @@ class GamblingExtensionClass extends Extension {
     })
     betChoice: string
   ) {
+    const guildId = i.guildId
+    if (guildId === null) {
+      await replyEphemeral(i, '이 명령어는 서버에서만 사용할 수 있어요.')
+      return
+    }
     try {
-      const balance = await economy.getBalance(i.user.id)
+      const balance = await economy.getBalance(guildId, i.user.id)
       if (balance.amount < bet) {
         await replyEphemeral(
           i,
@@ -285,19 +327,23 @@ class GamblingExtensionClass extends Extension {
 
       await economy.transfer({
         amount: bet,
+        guildId,
         fromUserId: i.user.id,
         toUserId: '0',
       })
 
       const result = playRoulette({ random: rng, bet, betType })
 
-      if (result.win) {
-        await economy.addBalance(i.user.id, result.payout)
-      }
+      const { payout } = await resolveWinnings(
+        guildId,
+        i.user.id,
+        result.win,
+        result.payout
+      )
 
-      await economy.recordGamble(i.user.id, bet, result.payout, result.win)
+      await economy.recordGamble(guildId, i.user.id, bet, payout, result.win)
       try {
-        await economy.recordQuestProgress(i.user.id, 'gamble')
+        await economy.recordQuestProgress(guildId, i.user.id, 'gamble')
       } catch (err) {
         logger.warn(
           'Gambling',
@@ -315,7 +361,7 @@ class GamblingExtensionClass extends Extension {
         bet,
         betLabel,
         result.win,
-        result.payout
+        payout
       )
     } catch (err) {
       await replyEphemeral(
@@ -340,8 +386,13 @@ class GamblingExtensionClass extends Extension {
     })
     bet: number
   ) {
+    const guildId = i.guildId
+    if (guildId === null) {
+      await replyEphemeral(i, '이 명령어는 서버에서만 사용할 수 있어요.')
+      return
+    }
     try {
-      const balance = await economy.getBalance(i.user.id)
+      const balance = await economy.getBalance(guildId, i.user.id)
       if (balance.amount < bet) {
         await replyEphemeral(
           i,
@@ -352,11 +403,12 @@ class GamblingExtensionClass extends Extension {
 
       await economy.transfer({
         amount: bet,
+        guildId,
         fromUserId: i.user.id,
         toUserId: '0',
       })
 
-      await runBlackjackRound(i, bet)
+      await runBlackjackRound(i, guildId, bet)
     } catch (err) {
       await replyEphemeral(
         i,
@@ -612,6 +664,7 @@ function playerHandLabel(hand: BlackjackHand): string {
 
 async function runBlackjackRound(
   i: ChatInputCommandInteraction,
+  guildId: string,
   bet: number
 ): Promise<void> {
   const userMention = `<@${i.user.id}>`
@@ -633,7 +686,15 @@ async function runBlackjackRound(
 
   if (playerHand.isBlackjack || dealerHandInitial.isBlackjack) {
     const dealerFinal = playDealer(deck, dealerHandInitial).hand
-    await settleBlackjack(i, bet, userMention, playerHand, dealerFinal, true)
+    await settleBlackjack(
+      i,
+      guildId,
+      bet,
+      userMention,
+      playerHand,
+      dealerFinal,
+      true
+    )
     return
   }
 
@@ -665,8 +726,8 @@ async function runBlackjackRound(
       )
       await i.editReply({ components: [timeoutContainer] })
       try {
-        await economy.recordGamble(i.user.id, bet, 0, false)
-        await economy.recordQuestProgress(i.user.id, 'gamble')
+        await economy.recordGamble(guildId, i.user.id, bet, 0, false)
+        await economy.recordQuestProgress(guildId, i.user.id, 'gamble')
       } catch (err) {
         logger.warn(
           'Gambling',
@@ -681,7 +742,15 @@ async function runBlackjackRound(
     if (component.customId === BLACKJACK_STAND_ID) {
       await component.deferUpdate()
       const { hand: dealerFinal } = playDealer(deck, dealerHandInitial)
-      await settleBlackjack(i, bet, userMention, playerHand, dealerFinal, true)
+      await settleBlackjack(
+        i,
+        guildId,
+        bet,
+        userMention,
+        playerHand,
+        dealerFinal,
+        true
+      )
       return
     }
 
@@ -694,6 +763,7 @@ async function runBlackjackRound(
       await component.deferUpdate()
       await settleBlackjack(
         i,
+        guildId,
         bet,
         userMention,
         playerHand,
@@ -740,6 +810,7 @@ async function awaitBlackjackButton(
 
 async function settleBlackjack(
   i: ChatInputCommandInteraction,
+  guildId: string,
   bet: number,
   userMention: string,
   playerHand: BlackjackHand,
@@ -747,14 +818,18 @@ async function settleBlackjack(
   revealDealer: boolean
 ): Promise<void> {
   const outcome = determineBlackjackOutcome(playerHand, dealerHand)
-  const { multiplier, payout, win } = blackjackPayout(outcome, bet)
+  const { multiplier, payout: basePayout, win } = blackjackPayout(outcome, bet)
 
-  if (win) {
-    await economy.addBalance(i.user.id, payout)
+  // 무승부(push)는 베팅금을 그대로 돌려준다.
+  if (outcome === 'push') {
+    await economy.addBalance(guildId, i.user.id, bet)
   }
-  await economy.recordGamble(i.user.id, bet, payout, win)
+
+  const { payout } = await resolveWinnings(guildId, i.user.id, win, basePayout)
+  const recordedWon = win ? payout : outcome === 'push' ? bet : 0
+  await economy.recordGamble(guildId, i.user.id, bet, recordedWon, win)
   try {
-    await economy.recordQuestProgress(i.user.id, 'gamble')
+    await economy.recordQuestProgress(guildId, i.user.id, 'gamble')
   } catch (err) {
     logger.warn(
       'Gambling',

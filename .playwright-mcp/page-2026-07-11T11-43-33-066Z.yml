@@ -1,0 +1,10 @@
+- generic [active] [ref=f2e1]:
+  - generic [ref=f2e3]:
+    - generic [ref=f2e11]: 페이지를 찾을 수 없어요
+    - generic [ref=f2e12]: 주소가 바뀌었거나 존재하지 않는 페이지예요.
+    - generic [ref=f2e13]:
+      - link "홈으로" [ref=f2e14] [cursor=pointer]:
+        - /url: /
+      - link "데스크 입장" [ref=f2e15] [cursor=pointer]:
+        - /url: /status
+  - alert [ref=f2e16]

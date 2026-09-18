@@ -10,6 +10,7 @@ import {
 import { setVolume } from '../music/volumeStore'
 import { logger } from '../utils/logger'
 import { replyEphemeral } from '../utils/replies'
+import { displayTrackTitle } from '../utils/title'
 import {
   Extension,
   SubCommandGroup,
@@ -42,7 +43,9 @@ export function setMusicManager(
 
 export function getMusicManager(): LavalinkManager<CustomPlayer> {
   if (lavalinkManager === undefined) {
-    throw new Error('Lavalink 서버가 연결되지 않았어요. 설정을 확인해 주세요.')
+    throw new Error(
+      '음악 서버가 아직 연결되지 않았거나 일시적으로 사용할 수 없습니다. 관리자에게 Lavalink 상태 확인을 요청해 주세요.'
+    )
   }
   return lavalinkManager
 }
@@ -53,7 +56,9 @@ export function getMusicSettings() {
 
 function requireManager(): LavalinkManager<CustomPlayer> {
   if (lavalinkManager === undefined) {
-    throw new Error('Lavalink 서버가 연결되지 않았어요. 설정을 확인해 주세요.')
+    throw new Error(
+      '음악 서버가 아직 연결되지 않았거나 일시적으로 사용할 수 없습니다. 관리자에게 Lavalink 상태 확인을 요청해 주세요.'
+    )
   }
   return lavalinkManager
 }
@@ -64,6 +69,27 @@ function requireGuild(interaction: ChatInputCommandInteraction): string {
     throw new Error('서버 안에서만 음악 명령을 사용할 수 있어요.')
   }
   return guild.id
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : '알 수 없는 오류가 발생했어요.'
+}
+
+async function replyMusicError(
+  interaction: ChatInputCommandInteraction,
+  err: unknown
+): Promise<void> {
+  const message = errorMessage(err)
+  try {
+    await replyEphemeral(interaction, message)
+  } catch (replyErr) {
+    logger.debug(
+      'Music',
+      `음악 명령 오류 응답 실패: ${
+        replyErr instanceof Error ? replyErr.message : String(replyErr)
+      }`
+    )
+  }
 }
 
 function requireVoiceChannelId(
@@ -157,23 +183,27 @@ class MusicExtensionClass extends Extension {
 
   @musicGroup.command({ name: '스킵', description: '현재 곡을 건너뜁니다.' })
   async skip(i: ChatInputCommandInteraction) {
-    const guildId = requireGuild(i)
-    const manager = requireManager()
-    const player = manager.getPlayer(guildId)
+    try {
+      const guildId = requireGuild(i)
+      const manager = requireManager()
+      const player = manager.getPlayer(guildId)
 
-    if (player === undefined || player.queue.tracks.length === 0) {
-      await replyEphemeral(i, '건너뛸 곡이 없어요.')
-      return
+      if (player === undefined || player.queue.tracks.length === 0) {
+        await replyEphemeral(i, '건너뛸 곡이 없어요.')
+        return
+      }
+
+      const skipped = player.queue.current
+      await player.skip()
+      await replyEphemeral(
+        i,
+        skipped !== undefined && skipped !== null
+          ? `스킵했어요: **${displayTrackTitle(skipped.info.title)}**`
+          : '곡을 건너뛰었어요.'
+      )
+    } catch (err) {
+      await replyMusicError(i, err)
     }
-
-    const skipped = player.queue.current
-    await player.skip()
-    await replyEphemeral(
-      i,
-      skipped !== undefined && skipped !== null
-        ? `스킵했어요: **${skipped.info.title}**`
-        : '곡을 건너뛰었어요.'
-    )
   }
 
   @musicGroup.command({
@@ -181,17 +211,21 @@ class MusicExtensionClass extends Extension {
     description: '재생을 정지하고 대기열을 비웁니다.',
   })
   async stop(i: ChatInputCommandInteraction) {
-    const guildId = requireGuild(i)
-    const manager = requireManager()
-    const player = manager.getPlayer(guildId)
+    try {
+      const guildId = requireGuild(i)
+      const manager = requireManager()
+      const player = manager.getPlayer(guildId)
 
-    if (player === undefined) {
-      await replyEphemeral(i, '재생 중인 봇이 없어요.')
-      return
+      if (player === undefined) {
+        await replyEphemeral(i, '재생 중인 봇이 없어요.')
+        return
+      }
+
+      await player.destroy()
+      await replyEphemeral(i, '재생을 정지하고 대기열을 비웠어요.')
+    } catch (err) {
+      await replyMusicError(i, err)
     }
-
-    await player.destroy()
-    await replyEphemeral(i, '재생을 정지하고 대기열을 비웠어요.')
   }
 
   @musicGroup.command({
@@ -199,17 +233,21 @@ class MusicExtensionClass extends Extension {
     description: '재생을 일시정지합니다.',
   })
   async pause(i: ChatInputCommandInteraction) {
-    const guildId = requireGuild(i)
-    const manager = requireManager()
-    const player = manager.getPlayer(guildId)
+    try {
+      const guildId = requireGuild(i)
+      const manager = requireManager()
+      const player = manager.getPlayer(guildId)
 
-    if (player === undefined || !player.playing) {
-      await replyEphemeral(i, '재생 중인 곡이 없어요.')
-      return
+      if (player === undefined || !player.playing) {
+        await replyEphemeral(i, '재생 중인 곡이 없어요.')
+        return
+      }
+
+      await player.pause()
+      await replyEphemeral(i, '일시정지했어요.')
+    } catch (err) {
+      await replyMusicError(i, err)
     }
-
-    await player.pause()
-    await replyEphemeral(i, '일시정지했어요.')
   }
 
   @musicGroup.command({
@@ -217,17 +255,21 @@ class MusicExtensionClass extends Extension {
     description: '일시정지된 곡을 다시 재생합니다.',
   })
   async resume(i: ChatInputCommandInteraction) {
-    const guildId = requireGuild(i)
-    const manager = requireManager()
-    const player = manager.getPlayer(guildId)
+    try {
+      const guildId = requireGuild(i)
+      const manager = requireManager()
+      const player = manager.getPlayer(guildId)
 
-    if (player === undefined || !player.paused) {
-      await replyEphemeral(i, '일시정지된 곡이 없어요.')
-      return
+      if (player === undefined || !player.paused) {
+        await replyEphemeral(i, '일시정지된 곡이 없어요.')
+        return
+      }
+
+      await player.resume()
+      await replyEphemeral(i, '다시 재생했어요.')
+    } catch (err) {
+      await replyMusicError(i, err)
     }
-
-    await player.resume()
-    await replyEphemeral(i, '다시 재생했어요.')
   }
 
   @musicGroup.command({ name: '대기열', description: '대기열을 확인합니다.' })
@@ -242,26 +284,30 @@ class MusicExtensionClass extends Extension {
     })
     _page: number
   ) {
-    const guildId = requireGuild(i)
-    const manager = requireManager()
-    const player = manager.getPlayer(guildId)
+    try {
+      const guildId = requireGuild(i)
+      const manager = requireManager()
+      const player = manager.getPlayer(guildId)
 
-    const pageInput = i.options.getInteger('페이지') ?? 1
-    const page = Math.max(1, pageInput)
+      const pageInput = i.options.getInteger('페이지') ?? 1
+      const page = Math.max(1, pageInput)
 
-    if (player === undefined || player.queue.tracks.length === 0) {
-      await replyEphemeral(i, '대기열이 비어 있어요.')
-      return
+      if (player === undefined || player.queue.tracks.length === 0) {
+        await replyEphemeral(i, '대기열이 비어 있어요.')
+        return
+      }
+
+      const tracks = player.queue.tracks.map((track) => ({
+        author: track.info.author ?? '알 수 없음',
+        durationMs: track.info.duration ?? 0,
+        title: displayTrackTitle(track.info.title),
+      }))
+
+      const queuePage = paginateQueue(tracks, { page: page - 1, perPage: 10 })
+      await replyEphemeral(i, formatQueuePage(queuePage))
+    } catch (err) {
+      await replyMusicError(i, err)
     }
-
-    const tracks = player.queue.tracks.map((track) => ({
-      author: track.info.author ?? '알 수 없음',
-      durationMs: track.info.duration ?? 0,
-      title: track.info.title,
-    }))
-
-    const queuePage = paginateQueue(tracks, { page: page - 1, perPage: 10 })
-    await replyEphemeral(i, formatQueuePage(queuePage))
   }
 
   @musicGroup.command({
@@ -269,22 +315,26 @@ class MusicExtensionClass extends Extension {
     description: '지금 재생 중인 곡을 확인합니다.',
   })
   async nowplaying(i: ChatInputCommandInteraction) {
-    const guildId = requireGuild(i)
-    const manager = requireManager()
-    const player = manager.getPlayer(guildId)
+    try {
+      const guildId = requireGuild(i)
+      const manager = requireManager()
+      const player = manager.getPlayer(guildId)
 
-    const track = player?.queue.current
-    if (track === undefined || track === null) {
-      await replyEphemeral(i, '지금 재생 중인 곡이 없어요.')
-      return
+      const track = player?.queue.current
+      if (track === undefined || track === null) {
+        await replyEphemeral(i, '지금 재생 중인 곡이 없어요.')
+        return
+      }
+
+      await replyEphemeral(
+        i,
+        `지금 재생 중: **${displayTrackTitle(track.info.title)}** — ${
+          track.info.author ?? '알 수 없음'
+        }`
+      )
+    } catch (err) {
+      await replyMusicError(i, err)
     }
-
-    await replyEphemeral(
-      i,
-      `지금 재생 중: **${track.info.title}** — ${
-        track.info.author ?? '알 수 없음'
-      }`
-    )
   }
 
   @musicGroup.command({
@@ -303,29 +353,33 @@ class MusicExtensionClass extends Extension {
     })
     volume: number
   ) {
-    const guildId = requireGuild(i)
-    const manager = requireManager()
-    const player = manager.getPlayer(guildId)
+    try {
+      const guildId = requireGuild(i)
+      const manager = requireManager()
+      const player = manager.getPlayer(guildId)
 
-    if (player === undefined) {
-      await replyEphemeral(i, '재생 중인 봇이 없어요.')
-      return
-    }
+      if (player === undefined) {
+        await replyEphemeral(i, '재생 중인 봇이 없어요.')
+        return
+      }
 
-    await player.setVolume(volume)
-    setVolume(guildId, volume)
-    musicSettings.patchSettings(guildId, { volume }).catch((err: unknown) => {
-      logger.debug(
-        'Music',
-        `patchSettings(volume) failed: ${
-          err instanceof Error ? err.message : String(err)
-        }`
+      await player.setVolume(volume)
+      setVolume(guildId, volume)
+      musicSettings.patchSettings(guildId, { volume }).catch((err: unknown) => {
+        logger.debug(
+          'Music',
+          `patchSettings(volume) failed: ${
+            err instanceof Error ? err.message : String(err)
+          }`
+        )
+      })
+      await replyEphemeral(
+        i,
+        `볼륨을 ${volume}으로 설정했어요. 다음 곡부터도 유지돼요.`
       )
-    })
-    await replyEphemeral(
-      i,
-      `볼륨을 ${volume}으로 설정했어요. 다음 곡부터도 유지돼요.`
-    )
+    } catch (err) {
+      await replyMusicError(i, err)
+    }
   }
 
   @musicGroup.command({
@@ -333,17 +387,21 @@ class MusicExtensionClass extends Extension {
     description: '대기열을 무작위로 섞습니다.',
   })
   async shuffle(i: ChatInputCommandInteraction) {
-    const guildId = requireGuild(i)
-    const manager = requireManager()
-    const player = manager.getPlayer(guildId)
+    try {
+      const guildId = requireGuild(i)
+      const manager = requireManager()
+      const player = manager.getPlayer(guildId)
 
-    if (player === undefined || player.queue.tracks.length < 2) {
-      await replyEphemeral(i, '셔플할 곡이 충분하지 않아요.')
-      return
+      if (player === undefined || player.queue.tracks.length < 2) {
+        await replyEphemeral(i, '셔플할 곡이 충분하지 않아요.')
+        return
+      }
+
+      player.queue.shuffle()
+      await replyEphemeral(i, '대기열을 섞었어요.')
+    } catch (err) {
+      await replyMusicError(i, err)
     }
-
-    player.queue.shuffle()
-    await replyEphemeral(i, '대기열을 섞었어요.')
   }
 
   @musicGroup.command({ name: '반복', description: '반복 모드를 설정합니다.' })
@@ -362,33 +420,37 @@ class MusicExtensionClass extends Extension {
     })
     mode: RepeatMode
   ) {
-    const guildId = requireGuild(i)
-    const manager = requireManager()
-    const player = manager.getPlayer(guildId)
+    try {
+      const guildId = requireGuild(i)
+      const manager = requireManager()
+      const player = manager.getPlayer(guildId)
 
-    if (player === undefined) {
-      await replyEphemeral(i, '재생 중인 봇이 없어요.')
-      return
+      if (player === undefined) {
+        await replyEphemeral(i, '재생 중인 봇이 없어요.')
+        return
+      }
+
+      await player.setRepeatMode(mode)
+      musicSettings
+        .patchSettings(guildId, { repeatMode: mode })
+        .catch((err: unknown) => {
+          logger.debug(
+            'Music',
+            `patchSettings(repeatMode) failed: ${
+              err instanceof Error ? err.message : String(err)
+            }`
+          )
+        })
+      const label =
+        mode === 'off'
+          ? '반복을 끄고'
+          : mode === 'track'
+          ? '한 곡 반복으로'
+          : '대기열 반복으로'
+      await replyEphemeral(i, `${label} 설정했어요.`)
+    } catch (err) {
+      await replyMusicError(i, err)
     }
-
-    await player.setRepeatMode(mode)
-    musicSettings
-      .patchSettings(guildId, { repeatMode: mode })
-      .catch((err: unknown) => {
-        logger.debug(
-          'Music',
-          `patchSettings(repeatMode) failed: ${
-            err instanceof Error ? err.message : String(err)
-          }`
-        )
-      })
-    const label =
-      mode === 'off'
-        ? '반복을 끄고'
-        : mode === 'track'
-        ? '한 곡 반복으로'
-        : '대기열 반복으로'
-    await replyEphemeral(i, `${label} 설정했어요.`)
   }
 
   @musicGroup.command({ name: '탐색', description: '재생 위치를 이동합니다.' })
@@ -402,18 +464,22 @@ class MusicExtensionClass extends Extension {
     })
     input: string
   ) {
-    const guildId = requireGuild(i)
-    const manager = requireManager()
-    const player = manager.getPlayer(guildId)
+    try {
+      const guildId = requireGuild(i)
+      const manager = requireManager()
+      const player = manager.getPlayer(guildId)
 
-    if (player === undefined || player.queue.current === undefined) {
-      await replyEphemeral(i, '재생 중인 곡이 없어요.')
-      return
+      if (player === undefined || player.queue.current === undefined) {
+        await replyEphemeral(i, '재생 중인 곡이 없어요.')
+        return
+      }
+
+      const positionMs = parseSeekInput(input)
+      await player.seek(positionMs)
+      await replyEphemeral(i, `\`${input}\` 위치로 이동했어요.`)
+    } catch (err) {
+      await replyMusicError(i, err)
     }
-
-    const positionMs = parseSeekInput(input)
-    await player.seek(positionMs)
-    await replyEphemeral(i, `\`${input}\` 위치로 이동했어요.`)
   }
 
   @musicGroup.command({
@@ -431,17 +497,21 @@ class MusicExtensionClass extends Extension {
     })
     index: number
   ) {
-    const guildId = requireGuild(i)
-    const manager = requireManager()
-    const player = manager.getPlayer(guildId)
+    try {
+      const guildId = requireGuild(i)
+      const manager = requireManager()
+      const player = manager.getPlayer(guildId)
 
-    if (player === undefined || player.queue.tracks.length < index) {
-      await replyEphemeral(i, '해당 번호의 곡이 없어요.')
-      return
+      if (player === undefined || player.queue.tracks.length < index) {
+        await replyEphemeral(i, '해당 번호의 곡이 없어요.')
+        return
+      }
+
+      player.queue.remove(index - 1)
+      await replyEphemeral(i, `${index}번 곡을 삭제했어요.`)
+    } catch (err) {
+      await replyMusicError(i, err)
     }
-
-    player.queue.remove(index - 1)
-    await replyEphemeral(i, `${index}번 곡을 삭제했어요.`)
   }
 
   @musicGroup.command({
@@ -449,17 +519,21 @@ class MusicExtensionClass extends Extension {
     description: '대기열을 비웁니다 (현재 곡은 유지).',
   })
   async clear(i: ChatInputCommandInteraction) {
-    const guildId = requireGuild(i)
-    const manager = requireManager()
-    const player = manager.getPlayer(guildId)
+    try {
+      const guildId = requireGuild(i)
+      const manager = requireManager()
+      const player = manager.getPlayer(guildId)
 
-    if (player === undefined || player.queue.tracks.length === 0) {
-      await replyEphemeral(i, '대기열이 이미 비어 있어요.')
-      return
+      if (player === undefined || player.queue.tracks.length === 0) {
+        await replyEphemeral(i, '대기열이 이미 비어 있어요.')
+        return
+      }
+
+      player.queue.tracks.splice(0, player.queue.tracks.length)
+      await replyEphemeral(i, '대기열을 비웠어요.')
+    } catch (err) {
+      await replyMusicError(i, err)
     }
-
-    player.queue.tracks.splice(0, player.queue.tracks.length)
-    await replyEphemeral(i, '대기열을 비웠어요.')
   }
 
   @musicGroup.command({

@@ -1,3 +1,4 @@
+import { MODERATION_GUILD_ID } from '../moderation/moderationConfig'
 import { AuditLogEvent } from 'discord.js'
 
 export const SERVER_LOG_CATEGORIES = [
@@ -11,6 +12,8 @@ export const SERVER_LOG_CATEGORIES = [
   'invites',
   'webhooks',
   'expressions',
+  'clantag',
+  'automod',
 ] as const
 
 export type ServerLogCategory = (typeof SERVER_LOG_CATEGORIES)[number]
@@ -61,11 +64,24 @@ export const SERVER_LOG_CATEGORY_DEFINITIONS: readonly ServerLogCategoryDefiniti
       label: '표현 요소',
       description: '이모지 반응 추가/삭제, 스티커, 사운드보드 생성/수정/삭제',
     },
+    {
+      id: 'clantag',
+      label: '서버 태그',
+      description: '서버 태그 적용/해제 감지',
+    },
+    {
+      id: 'automod',
+      label: '자동 검열',
+      description: '금지어·초대링크·스팸·NSFW 등 자동 검열 조치',
+    },
   ]
 
 const SERVER_LOG_CATEGORY_SET: ReadonlySet<string> = new Set(
   SERVER_LOG_CATEGORIES
 )
+
+const RESTRICTED_SERVER_LOG_CATEGORIES: ReadonlySet<ServerLogCategory> =
+  new Set(['clantag', 'automod'])
 
 const AUDIT_ACTION_CATEGORY: Readonly<
   Partial<Record<AuditLogEvent, ServerLogCategory>>
@@ -99,8 +115,8 @@ const AUDIT_ACTION_CATEGORY: Readonly<
   [AuditLogEvent.MemberPrune]: 'moderation',
   [AuditLogEvent.MemberRoleUpdate]: 'members',
   [AuditLogEvent.MemberUpdate]: 'members',
-  [AuditLogEvent.MessageBulkDelete]: 'messages',
-  [AuditLogEvent.MessageDelete]: 'messages',
+  // MessageDelete/MessageBulkDelete는 게이트웨이 이벤트 쪽에서 내용 포함으로
+  // 기록하므로 감사 로그 매핑에서 제외한다(중복 방지).
   [AuditLogEvent.MessagePin]: 'messages',
   [AuditLogEvent.MessageUnpin]: 'messages',
   [AuditLogEvent.RoleCreate]: 'roles',
@@ -124,6 +140,9 @@ const AUDIT_ACTION_CATEGORY: Readonly<
   [AuditLogEvent.AutoModerationBlockMessage]: 'moderation',
   [AuditLogEvent.AutoModerationFlagToChannel]: 'moderation',
   [AuditLogEvent.AutoModerationQuarantineUser]: 'moderation',
+  [AuditLogEvent.AutoModerationRuleCreate]: 'moderation',
+  [AuditLogEvent.AutoModerationRuleDelete]: 'moderation',
+  [AuditLogEvent.AutoModerationRuleUpdate]: 'moderation',
   [AuditLogEvent.AutoModerationUserCommunicationDisabled]: 'moderation',
   [AuditLogEvent.CreatorMonetizationRequestCreated]: 'server',
   [AuditLogEvent.CreatorMonetizationTermsAccepted]: 'server',
@@ -146,4 +165,13 @@ export function categoryForAuditAction(
 
 export function isServerLogCategory(value: string): value is ServerLogCategory {
   return SERVER_LOG_CATEGORY_SET.has(value)
+}
+
+export function getVisibleServerLogCategories(
+  guildId: string
+): readonly ServerLogCategory[] {
+  if (guildId === MODERATION_GUILD_ID) return SERVER_LOG_CATEGORIES
+  return SERVER_LOG_CATEGORIES.filter(
+    (category) => !RESTRICTED_SERVER_LOG_CATEGORIES.has(category)
+  )
 }

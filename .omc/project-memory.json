@@ -1,0 +1,513 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1784113229238,
+  "projectRoot": "/home/ubuntu/lishibot",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      },
+      {
+        "name": "TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "tsconfig.json"
+        ]
+      }
+    ],
+    "frameworks": [],
+    "packageManager": "pnpm",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "pnpm build 2>&1 | tail -3 && echo \"===build ok===\" && pm2 restart lishibot 2>&1 | grep -E \"lishibot|✓\" | tail -2 && pm2 restart dashboard 2>&1 | grep -E \"dashboard|✓\" | tail -2",
+    "testCommand": null,
+    "lintCommand": "pnpm lint",
+    "devCommand": "pnpm dev",
+    "scripts": {
+      "build": "tsc",
+      "dev": "ts-node --swc src",
+      "dev:tts": "ts-node --swc src/tts",
+      "start": "node dist",
+      "start:tts": "node dist/tts",
+      "lint": "eslint src --ignore-path .gitignore"
+    }
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": "feature-based"
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "assets",
+      "src"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "assets": {
+      "path": "assets",
+      "purpose": "Static assets",
+      "fileCount": 0,
+      "lastAccessed": 1784113229230,
+      "keyFiles": []
+    },
+    "dashboard": {
+      "path": "dashboard",
+      "purpose": null,
+      "fileCount": 8,
+      "lastAccessed": 1784113229231,
+      "keyFiles": [
+        "DESIGN_AUDIT.md",
+        "next-env.d.ts",
+        "next.config.mjs",
+        "package.json",
+        "pnpm-lock.yaml"
+      ]
+    },
+    "data": {
+      "path": "data",
+      "purpose": "Data files",
+      "fileCount": 1,
+      "lastAccessed": 1784113229235,
+      "keyFiles": []
+    },
+    "dist": {
+      "path": "dist",
+      "purpose": "Distribution/build output",
+      "fileCount": 2,
+      "lastAccessed": 1784113229236,
+      "keyFiles": [
+        "config.js",
+        "index.js"
+      ]
+    },
+    "lavalink": {
+      "path": "lavalink",
+      "purpose": null,
+      "fileCount": 4,
+      "lastAccessed": 1784113229236,
+      "keyFiles": [
+        "Lavalink.jar",
+        "application.yml",
+        "start.bat",
+        "start.sh"
+      ]
+    },
+    "logs": {
+      "path": "logs",
+      "purpose": null,
+      "fileCount": 4,
+      "lastAccessed": 1784113229236,
+      "keyFiles": [
+        "bot-error-2.log",
+        "bot-out-2.log",
+        "tts-error-5.log",
+        "tts-out-5.log"
+      ]
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 2,
+      "lastAccessed": 1784113229236,
+      "keyFiles": [
+        "config.ts",
+        "index.ts"
+      ]
+    },
+    "dashboard/app": {
+      "path": "dashboard/app",
+      "purpose": "Application code",
+      "fileCount": 6,
+      "lastAccessed": 1784113229237,
+      "keyFiles": [
+        "error.tsx",
+        "globals.css",
+        "layout.tsx"
+      ]
+    },
+    "dashboard/lib": {
+      "path": "dashboard/lib",
+      "purpose": "Library code",
+      "fileCount": 4,
+      "lastAccessed": 1784113229237,
+      "keyFiles": [
+        "botApi.ts",
+        "guilds.ts",
+        "session.ts"
+      ]
+    },
+    "dashboard/node_modules": {
+      "path": "dashboard/node_modules",
+      "purpose": "Dependencies",
+      "fileCount": 1,
+      "lastAccessed": 1784113229237,
+      "keyFiles": []
+    },
+    "data/migrations": {
+      "path": "data/migrations",
+      "purpose": "Database migrations",
+      "fileCount": 25,
+      "lastAccessed": 1784113229237,
+      "keyFiles": [
+        "001_create_user_memories.sql",
+        "002_create_economy_music_rpc.sql",
+        "003_soundboard_guard_settings.sql"
+      ]
+    },
+    "dist/components": {
+      "path": "dist/components",
+      "purpose": "UI components",
+      "fileCount": 1,
+      "lastAccessed": 1784113229237,
+      "keyFiles": [
+        "musicPanel.js"
+      ]
+    },
+    "dist/config": {
+      "path": "dist/config",
+      "purpose": "Configuration files",
+      "fileCount": 1,
+      "lastAccessed": 1784113229237,
+      "keyFiles": [
+        "korea.js"
+      ]
+    },
+    "src/components": {
+      "path": "src/components",
+      "purpose": "UI components",
+      "fileCount": 1,
+      "lastAccessed": 1784113229238,
+      "keyFiles": [
+        "musicPanel.ts"
+      ]
+    },
+    "src/config": {
+      "path": "src/config",
+      "purpose": "Configuration files",
+      "fileCount": 1,
+      "lastAccessed": 1784113229238,
+      "keyFiles": [
+        "korea.ts"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "src/tts/index.ts",
+      "accessCount": 38,
+      "lastAccessed": 1784113573581,
+      "type": "file"
+    },
+    {
+      "path": "src/tts/ttsText.ts",
+      "accessCount": 32,
+      "lastAccessed": 1784114110464,
+      "type": "file"
+    },
+    {
+      "path": "src/modules/RewardExtension.ts",
+      "accessCount": 29,
+      "lastAccessed": 1784125334115,
+      "type": "file"
+    },
+    {
+      "path": "src/modules/AdminExtension.ts",
+      "accessCount": 27,
+      "lastAccessed": 1783735362912,
+      "type": "file"
+    },
+    {
+      "path": "src/modules/ModerationExtension.ts",
+      "accessCount": 23,
+      "lastAccessed": 1783735226815,
+      "type": "file"
+    },
+    {
+      "path": "src/modules/TtsExtension.ts",
+      "accessCount": 20,
+      "lastAccessed": 1784113897752,
+      "type": "file"
+    },
+    {
+      "path": "src/features/economy/economy.ts",
+      "accessCount": 18,
+      "lastAccessed": 1783735184263,
+      "type": "file"
+    },
+    {
+      "path": "src/features/moderation/moderationConfig.ts",
+      "accessCount": 16,
+      "lastAccessed": 1783735353271,
+      "type": "file"
+    },
+    {
+      "path": "src/modules/ServerLogExtension.ts",
+      "accessCount": 14,
+      "lastAccessed": 1783997710611,
+      "type": "file"
+    },
+    {
+      "path": "src/features/ai/systemPrompt.ts",
+      "accessCount": 13,
+      "lastAccessed": 1783735243674,
+      "type": "file"
+    },
+    {
+      "path": "src/tts/ttsSfx.ts",
+      "accessCount": 11,
+      "lastAccessed": 1783735218551,
+      "type": "file"
+    },
+    {
+      "path": "src/tts/elevenLabs.ts",
+      "accessCount": 11,
+      "lastAccessed": 1783864496517,
+      "type": "file"
+    },
+    {
+      "path": "src/tts/ttsVoices.ts",
+      "accessCount": 11,
+      "lastAccessed": 1784113907963,
+      "type": "file"
+    },
+    {
+      "path": "src/tts/ttsVoice.ts",
+      "accessCount": 10,
+      "lastAccessed": 1783864513448,
+      "type": "file"
+    },
+    {
+      "path": "src/features/serverLogs/serverLogPanel.ts",
+      "accessCount": 10,
+      "lastAccessed": 1783998259287,
+      "type": "file"
+    },
+    {
+      "path": "src/modules/Hello.ts",
+      "accessCount": 9,
+      "lastAccessed": 1784001832981,
+      "type": "file"
+    },
+    {
+      "path": "src/features/activityLevels/activityLevels.ts",
+      "accessCount": 8,
+      "lastAccessed": 1783735262414,
+      "type": "file"
+    },
+    {
+      "path": "src/tts/controlServer.ts",
+      "accessCount": 8,
+      "lastAccessed": 1783736744369,
+      "type": "file"
+    },
+    {
+      "path": "src/modules/MemoryExtension.ts",
+      "accessCount": 7,
+      "lastAccessed": 1783735250623,
+      "type": "file"
+    },
+    {
+      "path": "src/features/moderation/moderationFilters.ts",
+      "accessCount": 7,
+      "lastAccessed": 1783735345070,
+      "type": "file"
+    },
+    {
+      "path": "src/config.ts",
+      "accessCount": 7,
+      "lastAccessed": 1783997662559,
+      "type": "file"
+    },
+    {
+      "path": "src/modules/LevelExtension.ts",
+      "accessCount": 6,
+      "lastAccessed": 1783735340376,
+      "type": "file"
+    },
+    {
+      "path": "src/features/moderation/moderationActions.ts",
+      "accessCount": 6,
+      "lastAccessed": 1783735361895,
+      "type": "file"
+    },
+    {
+      "path": "src/index.ts",
+      "accessCount": 6,
+      "lastAccessed": 1784124826583,
+      "type": "file"
+    },
+    {
+      "path": "src/tts/ttsMix.ts",
+      "accessCount": 5,
+      "lastAccessed": 1783735226929,
+      "type": "file"
+    },
+    {
+      "path": "config.example.json",
+      "accessCount": 5,
+      "lastAccessed": 1783997662622,
+      "type": "file"
+    },
+    {
+      "path": "src/tts/ttsVoiceStore.ts",
+      "accessCount": 4,
+      "lastAccessed": 1783735226570,
+      "type": "file"
+    },
+    {
+      "path": "src/modules/EconomyExtension.ts",
+      "accessCount": 4,
+      "lastAccessed": 1783735366027,
+      "type": "file"
+    },
+    {
+      "path": "src/modules/StatsExtension.ts",
+      "accessCount": 4,
+      "lastAccessed": 1783735392575,
+      "type": "file"
+    },
+    {
+      "path": "src/tts/ttsSessions.ts",
+      "accessCount": 4,
+      "lastAccessed": 1783736730909,
+      "type": "file"
+    },
+    {
+      "path": "src/features/activityLevels/activityLevelStats.ts",
+      "accessCount": 3,
+      "lastAccessed": 1783366055682,
+      "type": "file"
+    },
+    {
+      "path": "data/migrations/002_create_economy_music_rpc.sql",
+      "accessCount": 3,
+      "lastAccessed": 1783428188839,
+      "type": "file"
+    },
+    {
+      "path": "data/migrations/013_fix_activity_tracking_account_fk.sql",
+      "accessCount": 3,
+      "lastAccessed": 1783429011767,
+      "type": "file"
+    },
+    {
+      "path": "src/features/economy/dropTiers.ts",
+      "accessCount": 3,
+      "lastAccessed": 1783735262359,
+      "type": "file"
+    },
+    {
+      "path": "data/migrations/012_guild_activity_levels.sql",
+      "accessCount": 3,
+      "lastAccessed": 1783735340452,
+      "type": "file"
+    },
+    {
+      "path": "src/features/moderation/moderationSettingsStore.ts",
+      "accessCount": 3,
+      "lastAccessed": 1783735362311,
+      "type": "file"
+    },
+    {
+      "path": "src/utils/permissions.ts",
+      "accessCount": 3,
+      "lastAccessed": 1783998140996,
+      "type": "file"
+    },
+    {
+      "path": "package.json",
+      "accessCount": 3,
+      "lastAccessed": 1784124826446,
+      "type": "file"
+    },
+    {
+      "path": "data/migrations/014_moderation_settings.sql",
+      "accessCount": 2,
+      "lastAccessed": 1783354232125,
+      "type": "file"
+    },
+    {
+      "path": "data/migrations/005_quests_lottery_activity.sql",
+      "accessCount": 2,
+      "lastAccessed": 1783428206137,
+      "type": "file"
+    },
+    {
+      "path": "data/migrations/016_admin_commands.sql",
+      "accessCount": 2,
+      "lastAccessed": 1783428228938,
+      "type": "file"
+    },
+    {
+      "path": "data/migrations/015_tts_user_voices.sql",
+      "accessCount": 2,
+      "lastAccessed": 1783725421256,
+      "type": "file"
+    },
+    {
+      "path": "src/features/economy/randomDropPanel.ts",
+      "accessCount": 2,
+      "lastAccessed": 1783735261891,
+      "type": "file"
+    },
+    {
+      "path": "src/features/moderation/moderationSpamDetector.ts",
+      "accessCount": 2,
+      "lastAccessed": 1783735345224,
+      "type": "file"
+    },
+    {
+      "path": "src/features/moderation/moderationImageCheck.ts",
+      "accessCount": 1,
+      "lastAccessed": 1783350628828,
+      "type": "file"
+    },
+    {
+      "path": "src/types/badwords-ko.d.ts",
+      "accessCount": 1,
+      "lastAccessed": 1783350629772,
+      "type": "file"
+    },
+    {
+      "path": "src/features/soundboard/soundboardGuardStore.ts",
+      "accessCount": 1,
+      "lastAccessed": 1783352175495,
+      "type": "file"
+    },
+    {
+      "path": "data/migrations/003_soundboard_guard_settings.sql",
+      "accessCount": 1,
+      "lastAccessed": 1783353026021,
+      "type": "file"
+    },
+    {
+      "path": "bot.pm2.json",
+      "accessCount": 1,
+      "lastAccessed": 1783355342367,
+      "type": "file"
+    },
+    {
+      "path": "tts.pm2.json",
+      "accessCount": 1,
+      "lastAccessed": 1783356296952,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

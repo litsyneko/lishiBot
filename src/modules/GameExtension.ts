@@ -109,9 +109,17 @@ class GameExtensionClass extends Extension {
     })
     move: RockPaperScissorsMove
   ) {
+    const guildId = i.guildId
+    if (guildId === null) {
+      await i.reply({
+        content: '이 명령어는 서버에서만 사용할 수 있어요.',
+        flags: MessageFlags.Ephemeral,
+      })
+      return
+    }
     const result = playRockPaperScissors({ move, random: rng })
     try {
-      await economy.recordQuestProgress(i.user.id, 'rps')
+      await economy.recordQuestProgress(guildId, i.user.id, 'rps')
     } catch (err) {
       logger.warn(
         'Game',
@@ -122,7 +130,7 @@ class GameExtensionClass extends Extension {
     }
     if (result.result === 'win') {
       try {
-        await economy.addBalance(i.user.id, 2000)
+        await economy.addBalance(guildId, i.user.id, 2000)
       } catch (err) {
         logger.warn(
           'Game',

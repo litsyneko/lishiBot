@@ -1,0 +1,41 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]: 리시봇
+      - link "로그인" [ref=e6] [cursor=pointer]:
+        - /url: /api/auth/login
+    - generic [ref=e8]:
+      - generic [ref=e9]: FULL MOON OBSERVATORY
+      - heading "보름달 아래, 서버의 모든 것을 한 화면에서." [level=1] [ref=e10]: 보름달 아래,서버의 모든 것을한 화면에서.
+      - paragraph [ref=e11]: 리시봇은 FullMoon 서버의 밤을 지키는 만능 도우미예요. 음악과 경제, AI 에이전트와 TTS까지 — 이제 관제실에서 한눈에 보고 움직입니다.
+      - generic [ref=e12]:
+        - link "디스코드로 로그인" [ref=e13] [cursor=pointer]:
+          - /url: /api/auth/login
+        - link "기능 살펴보기" [ref=e14] [cursor=pointer]:
+          - /url: "#features"
+      - paragraph [ref=e15]: 리시봇이 있는 서버의 멤버만 관제실을 이용할 수 있어요.
+    - generic [ref=e16]:
+      - generic [ref=e17]:
+        - generic [ref=e18]: FEATURES
+        - heading "한 마리가 서버 전부를 돌봅니다" [level=2] [ref=e19]
+      - generic [ref=e20]:
+        - generic [ref=e21]:
+          - heading "음악" [level=3] [ref=e27]
+          - paragraph [ref=e28]: 유튜브 검색과 재생, 대기열 관리. 디스코드 밖 대시보드에서도 원격 제어.
+        - generic [ref=e29]:
+          - heading "경제 · 레벨" [level=3] [ref=e34]
+          - paragraph [ref=e35]: 서버별 지갑과 은행, 출석·도박·상점. 텍스트/음성 활동 레벨과 랭킹.
+        - generic [ref=e36]:
+          - heading "AI 에이전트" [level=3] [ref=e43]
+          - paragraph [ref=e44]: 멘션 대화와 서버 관리 자동화. 위험한 작업은 승인 카드로 한 번 더 확인.
+        - generic [ref=e45]:
+          - heading "TTS 읽어주기" [level=3] [ref=e50]
+          - paragraph [ref=e51]: 채팅을 음성채널에서 읽어주는 도우미. 유저마다 다른 목소리를 고를 수 있어요.
+        - generic [ref=e52]:
+          - heading "서버 로그" [level=3] [ref=e56]
+          - paragraph [ref=e57]: 삭제·수정·입퇴장·권한 변경까지. 놓치기 쉬운 순간을 꼼꼼하게 기록.
+        - generic [ref=e58]:
+          - heading "선착 보상" [level=3] [ref=e63]
+          - paragraph [ref=e64]: 랜덤 드랍과 부스트 축하. 서버를 살아있게 만드는 작은 이벤트들.
+    - contentinfo [ref=e65]: FULL MOON OBSERVATORY리시봇 · 관제실
+  - alert [ref=e66]

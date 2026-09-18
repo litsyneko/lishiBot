@@ -74,9 +74,6 @@ export const toolNameMap: Record<string, string> = {
   unpin_message: '고정 해제',
   react_message: '메시지 반응',
   search_messages: '메시지 검색',
-  schedule_task: '작업 예약',
-  list_scheduled_tasks: '예약 목록',
-  cancel_scheduled_task: '예약 취소',
 }
 
 /**

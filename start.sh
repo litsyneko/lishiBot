@@ -1,5 +1,5 @@
 #!/bin/bash
-# FullMoon Bot + Lavalink Launcher
+# LisyBot + Lavalink Launcher
 # Usage: ./start.sh [--no-lavalink]
 
 set -e
@@ -38,7 +38,7 @@ MAGENTA='\033[0;35m'
 NC='\033[0m'
 
 echo -e "${MAGENTA}========================================${NC}"
-echo -e "${MAGENTA}  FullMoon Bot + Lavalink Launcher${NC}"
+echo -e "${MAGENTA}  LisyBot + Lavalink Launcher${NC}"
 echo -e "${MAGENTA}========================================${NC}"
 echo ""
 

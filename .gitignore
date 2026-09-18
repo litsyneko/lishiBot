@@ -27,3 +27,4 @@ fix_sticker_ko.py
 
 # OpenCode workspace
 .omo/
+data/sfx-cache/

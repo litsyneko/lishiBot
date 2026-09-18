@@ -52,7 +52,7 @@ function Start-Bot {
 # ── Main ──
 
 Write-Host "========================================" -ForegroundColor Magenta
-Write-Host "  FullMoon Bot + Lavalink Launcher" -ForegroundColor Magenta
+Write-Host "  LisyBot + Lavalink Launcher" -ForegroundColor Magenta
 Write-Host "========================================" -ForegroundColor Magenta
 Write-Host ""
 

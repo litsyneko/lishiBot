@@ -1,0 +1,46 @@
+- generic [active] [ref=f4e1]:
+  - generic [ref=f4e2]:
+    - banner [ref=f4e3]:
+      - generic [ref=f4e4]: 리시봇
+      - link "로그인" [ref=f4e13] [cursor=pointer]:
+        - /url: /api/auth/login
+    - generic [ref=f4e15]:
+      - generic [ref=f4e16]: 리시봇 시그널 데스크
+      - heading "한국어 디스코드를 위한 다중 서버 운영 관제면." [level=1] [ref=f4e17]: 한국어 디스코드를위한 다중 서버운영 관제면.
+      - paragraph [ref=f4e18]: 리시봇이 들어간 모든 서버를 한 화면에서 관제하세요. AI 에이전트, 음악, 경제, TTS, 로그 — 서버별 상태를 한눈에 보고 움직입니다.
+      - generic [ref=f4e19]:
+        - link "디스코드로 로그인" [ref=f4e20] [cursor=pointer]:
+          - /url: /api/auth/login
+        - link "기능 살펴보기" [ref=f4e21] [cursor=pointer]:
+          - /url: "#features"
+      - paragraph [ref=f4e22]: 리시봇이 있는 서버의 멤버만 데스크를 이용할 수 있어요.
+    - generic [ref=f4e36]:
+      - generic [ref=f4e37]:
+        - generic [ref=f4e38]: 기능
+        - heading "서버 운영에 필요한 것들이 한곳에" [level=2] [ref=f4e39]
+      - generic [ref=f4e40]:
+        - generic [ref=f4e41]:
+          - heading "AI 에이전트" [level=3] [ref=f4e48]
+          - paragraph [ref=f4e49]: 멘션으로 자연어 대화와 서버 관리. 삭제 같은 위험 작업은 승인 카드로 한 번 더 확인해요.
+        - generic [ref=f4e50]:
+          - heading "음악 재생" [level=3] [ref=f4e56]
+          - paragraph [ref=f4e57]: 유튜브 검색 · 대기열 · 반복 · 셔플. 대시보드에서 재생 상태를 보고 원격 제어할 수 있어요.
+        - generic [ref=f4e58]:
+          - heading "경제 · 레벨" [level=3] [ref=f4e63]
+          - paragraph [ref=f4e64]: 서버별 지갑 · 출석 보상 · 송금. 텍스트/음성 활동 레벨과 랭킹까지 한곳에서.
+        - generic [ref=f4e65]:
+          - heading "TTS 읽어주기" [level=3] [ref=f4e70]
+          - paragraph [ref=f4e71]: 채팅을 음성 채널에서 읽어주는 도우미. 사용자마다 다른 목소리를 고를 수 있어요.
+        - generic [ref=f4e72]:
+          - heading "서버 로그" [level=3] [ref=f4e77]
+          - paragraph [ref=f4e78]: 삭제 · 수정 · 입퇴장 · 권한 변경까지. 놓치기 쉬운 순간을 꼼꼼하게 기록해요.
+        - generic [ref=f4e79]:
+          - heading "선착 보상" [level=3] [ref=f4e84]
+          - paragraph [ref=f4e85]: 랜덤 드랍과 부스트 축하. 서버를 살아있게 만드는 작은 이벤트들.
+      - generic [ref=f4e86]:
+        - generic [ref=f4e87]: 다중 서버
+        - generic [ref=f4e88]: 데스크는 리시봇이 있는 모든 서버를 통합 관제합니다. 실제 봇 조작은 디스코드 내에서 이루어져요.
+    - contentinfo [ref=f4e89]:
+      - generic [ref=f4e90]: 리시봇 시그널 데스크
+      - generic [ref=f4e91]: 다중 서버 운영 관제면
+  - alert [ref=f4e92]

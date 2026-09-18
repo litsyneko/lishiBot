@@ -42,9 +42,9 @@ export function createPlayerControllerManager(
     playerTextChannelId: string | null | undefined
   ) => Promise<GuildTextBasedChannel | undefined>
 ): PlayerControllerManager {
-  // ?�?� helpers ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
+  // ── helpers ──────────────────────────────────────
 
-  // ?�?� delete ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
+  // ── delete ───────────────────────────────────────
 
   async function tryDeleteMessage(
     guildId: string,
@@ -78,7 +78,7 @@ export function createPlayerControllerManager(
     }
   }
 
-  // ?�?� send ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
+  // ── send ─────────────────────────────────────────
 
   async function sendController(player: CustomPlayer): Promise<void> {
     // Delete previous controller first
@@ -94,6 +94,7 @@ export function createPlayerControllerManager(
 
     try {
       const msg = await channel.send({
+        allowedMentions: { parse: [] },
         components: panel.components,
         flags: MessageFlags.IsComponentsV2,
       })
@@ -105,7 +106,7 @@ export function createPlayerControllerManager(
     }
   }
 
-  // ?�?� update (debounced) ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
+  // ── update (debounced) ───────────────────────────
 
   function scheduleUpdate(player: CustomPlayer): void {
     clearDebounce(player.guildId)
@@ -145,6 +146,7 @@ export function createPlayerControllerManager(
 
     try {
       await (channel as GuildTextBasedChannel).messages.edit(messageId, {
+        allowedMentions: { parse: [] },
         components: panel.components,
         flags: MessageFlags.IsComponentsV2,
       })
@@ -156,7 +158,7 @@ export function createPlayerControllerManager(
     }
   }
 
-  // ?�?� event handlers ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
+  // ── event handlers ───────────────────────────────
 
   async function onTrackStart(player: CustomPlayer): Promise<void> {
     clearDebounce(player.guildId)
@@ -179,6 +181,7 @@ export function createPlayerControllerManager(
         const panel = buildControllerPanel(player)
         try {
           await (channel as GuildTextBasedChannel).messages.edit(messageId, {
+            allowedMentions: { parse: [] },
             components: panel.components,
             flags: MessageFlags.IsComponentsV2,
           })
@@ -250,8 +253,8 @@ export function createPlayerControllerManager(
     if (lastTrack !== undefined && lastTrack.info !== undefined) {
       const info = lastTrack.info
       trackInfo = {
-        title: info.title ?? '?????�음',
-        author: info.author ?? '?????�음',
+        title: info.title ?? '알 수 없음',
+        author: info.author ?? '알 수 없음',
         durationMs: info.duration ?? 0,
         artworkUrl: info.artworkUrl ?? undefined,
         identifier: info.identifier,
@@ -264,6 +267,7 @@ export function createPlayerControllerManager(
 
     try {
       await (channel as GuildTextBasedChannel).messages.edit(messageId, {
+        allowedMentions: { parse: [] },
         components: panel.components,
         flags: MessageFlags.IsComponentsV2,
       })
@@ -277,7 +281,7 @@ export function createPlayerControllerManager(
     }
   }
 
-  // ?�?� playerUpdate listener ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
+  // ── playerUpdate listener ────────────────────────
   // Debounced progress/state update from Lavalink
 
   manager.on('playerUpdate', (_old: unknown, player: CustomPlayer) => {

@@ -17,7 +17,7 @@ export const INTRO_INFO: IntroInfo = {
     },
     { name: 'AI 대화', value: '이 봇을 @멘션하고 질문해 보세요.' },
   ],
-  title: 'FullMoon 봇이에요!',
+  title: 'LisyBot 봇이에요!',
 }
 
 type MentionInfo = {

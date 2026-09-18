@@ -2,7 +2,6 @@ import type {
   ProviderAdapter,
   ToolDefinitionInput,
 } from '../features/ai/aiPolicy'
-import { assertCanUseAiManagement } from '../features/ai/aiPolicy'
 import type { AiStage } from '../features/ai/animationMessages'
 import {
   formatToolHistoryForPrompt,
@@ -20,6 +19,7 @@ import {
   stripThinkTags,
   stripToolCallSyntax,
 } from '../features/ai/thinkStripper'
+import { logger } from '../utils/logger'
 
 export type MessageCreateInput = {
   readonly authorBot: boolean
@@ -122,11 +122,6 @@ export async function handleMessageCreate(
       return { handled: true, sessionContinued: false }
     }
 
-    assertCanUseAiManagement({
-      administrator: context.message.isOwner || context.message.hasManageGuild,
-      manageGuild: context.message.hasManageGuild,
-    })
-
     if (context.ai.provider === undefined) {
       context.reply({
         content:
@@ -212,9 +207,17 @@ export async function handleMessageCreate(
       toolRecords: response.toolRecords,
     }
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : 'AI 처리 중 문제가 생겼어요.'
-    context.reply({ content: message, type: 'text' })
+    logger.error(
+      'AI',
+      `멘션 응답 생성 실패: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    )
+    context.reply({
+      content:
+        '앗, 대답을 만들다가 문제가 생겼어요. 잠시 후에 다시 불러주실 수 있을까요?',
+      type: 'text',
+    })
     return { handled: true, sessionContinued: false }
   }
 }

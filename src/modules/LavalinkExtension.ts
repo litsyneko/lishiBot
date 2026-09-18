@@ -87,7 +87,7 @@ class LavalinkExtensionClass extends Extension {
 
     const manager = createLavalinkManager({
       clientId: config.clientId,
-      clientUsername: this.client.user?.username ?? 'FullMoonBot',
+      clientUsername: this.client.user?.username ?? 'LisyBot',
       host: config.lavalink.host,
       password: config.lavalink.password,
       port: config.lavalink.port,
@@ -105,6 +105,59 @@ class LavalinkExtensionClass extends Extension {
       },
     })
     this.manager = manager
+
+    manager.nodeManager.on('connect', (node) => {
+      logger.info('Lavalink', `노드 연결됨: ${node.id}`)
+      void node.updateSession(true, 300_000).catch((err: unknown) => {
+        logger.debug(
+          'Lavalink',
+          `세션 재개 활성화 실패 (${node.id}): ${
+            err instanceof Error ? err.message : String(err)
+          }`
+        )
+      })
+    })
+
+    manager.nodeManager.on('disconnect', (node, reason) => {
+      logger.warn(
+        'Lavalink',
+        `노드 연결 끊김: ${node.id} — ${
+          reason !== undefined && reason !== null
+            ? JSON.stringify(reason)
+            : '알 수 없음'
+        }`
+      )
+    })
+
+    manager.nodeManager.on('reconnecting', (node) => {
+      logger.warn('Lavalink', `노드 재연결 중: ${node.id}`)
+    })
+
+    manager.nodeManager.on('error', (node, error: unknown) => {
+      logger.error(
+        'Lavalink',
+        `노드 오류 (${node.id}): ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      )
+    })
+
+    manager.nodeManager.on('destroy', (node, destroyReason?: string) => {
+      logger.error(
+        'Lavalink',
+        `노드 파괴됨: ${node.id}${
+          destroyReason !== undefined ? ` — ${destroyReason}` : ''
+        }`
+      )
+    })
+
+    manager.nodeManager.on('resumed', (node, _payload, players) => {
+      const count = Array.isArray(players) ? players.length : 0
+      logger.info(
+        'Lavalink',
+        `노드 세션 재개 완료: ${node.id} (${count}개 플레이어 복원)`
+      )
+    })
 
     manager.on('trackStart', (player: CustomPlayer, track) => {
       try {
@@ -259,10 +312,7 @@ class LavalinkExtensionClass extends Extension {
         logger.warn('Lavalink', 'client.user가 없어 초기화를 건너뛰어요.')
         return
       }
-      await manager.init({
-        id: user.id,
-        username: user.username,
-      })
+      await this.initWithRetry(manager, user.id, user.username)
       this.controller = createPlayerControllerManager(
         this.client,
         manager,
@@ -275,6 +325,55 @@ class LavalinkExtensionClass extends Extension {
       const reason = err instanceof Error ? err.message : String(err)
       logger.error('Lavalink', `Lavalink 초기화 실패: ${reason}`)
     }
+  }
+
+  private async initWithRetry(
+    manager: LavalinkManager<CustomPlayer>,
+    clientId: string,
+    clientUsername: string,
+    fastAttempts = 5,
+    maxRounds = 4,
+    fastBaseDelayMs = 2_000,
+    slowDelayMs = 5 * 60 * 1000
+  ): Promise<void> {
+    const totalAttempts = fastAttempts * maxRounds
+
+    for (let round = 1; round <= maxRounds; round += 1) {
+      for (let attempt = 1; attempt <= fastAttempts; attempt += 1) {
+        const globalAttempt = (round - 1) * fastAttempts + attempt
+        try {
+          await manager.init({ id: clientId, username: clientUsername })
+          if (globalAttempt > 1) {
+            logger.info(
+              'Lavalink',
+              `init 성공 (라운드 ${round}, 시도 ${globalAttempt}/${totalAttempts})`
+            )
+          }
+          return
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err)
+          const delay = fastBaseDelayMs * attempt
+          logger.warn(
+            'Lavalink',
+            `init 시도 ${globalAttempt}/${totalAttempts} (라운드 ${round}) 실패: ${reason} — ${
+              delay / 1000
+            }초 후 재시도`
+          )
+          await new Promise((resolve) => setTimeout(resolve, delay))
+        }
+      }
+      if (round < maxRounds) {
+        logger.warn(
+          'Lavalink',
+          `라운드 ${round} 전체 실패 — ${slowDelayMs / 1000}초 후 라운드 ${
+            round + 1
+          } 시작`
+        )
+        await new Promise((resolve) => setTimeout(resolve, slowDelayMs))
+      }
+    }
+
+    throw new Error(`Lavalink init 포기 — ${totalAttempts}회 시도 후 연결 실패`)
   }
 
   @listener({ event: 'raw' })

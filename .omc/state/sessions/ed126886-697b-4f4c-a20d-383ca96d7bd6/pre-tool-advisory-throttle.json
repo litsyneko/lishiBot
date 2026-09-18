@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "entries": {
+    "445ed27a3872b681d98190bae61ccb84954e1bc4e140df5370be958dee776b3a": {
+      "last_emitted_at_ms": 1784127047562,
+      "message": "Verify changes work after editing. Test functionality before marking complete."
+    },
+    "79a93d4a2f8f50b95f852280616242fee1855dc99a3c75211917f55e72e95fae": {
+      "last_emitted_at_ms": 1784126881295,
+      "message": "Use parallel execution for independent tasks. Use run_in_background for long operations (npm install, builds, tests)."
+    },
+    "466399dafa2d20f60587180bad0a07358eb7f2bce724df0ff682f038ad33f5ad": {
+      "last_emitted_at_ms": 1784126851559,
+      "message": "Read multiple files in parallel when possible for faster analysis."
+    },
+    "fb739b2cdf4777bdbd7638ac63242cf6a4eb6b1e0861cc9279740e83d3ef639b": {
+      "last_emitted_at_ms": 1784125216759,
+      "message": "Spawning agent: Explore (inherit) | Task: 봇 기능·데이터 전수 조사"
+    }
+  },
+  "updated_at": "2026-07-15T14:50:47.562Z"
+}

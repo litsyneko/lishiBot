@@ -1,4 +1,4 @@
-import { config } from '../config'
+import { type AiProviderConfig, config } from '../config'
 import { CommandAccessError } from '../domain/errors'
 import { handleMessageCreate } from '../events/messageCreate'
 import {
@@ -20,6 +20,7 @@ import {
   type AiStage,
   formatStageMessage,
 } from '../features/ai/animationMessages'
+import { createAnthropicProvider } from '../features/ai/anthropicProvider'
 import {
   APPROVAL_TTL_MS,
   type ApprovalProposal,
@@ -37,13 +38,6 @@ import {
   loadAiSessions,
 } from '../features/ai/conversationStore'
 import {
-  isAnyJobRunning,
-  loadAndRegisterAll,
-  setCronRunner,
-} from '../features/ai/cronScheduler'
-import { type CronJob, listCronJobs } from '../features/ai/cronStore'
-import { createGeminiProvider } from '../features/ai/geminiProvider'
-import {
   dismissOnboarding,
   shouldShowOnboarding,
 } from '../features/ai/onboarding'
@@ -56,23 +50,15 @@ import { createOpencodeZenProvider } from '../features/ai/opencodeZenProvider'
 import { summarizeMemberPermissions } from '../features/ai/permissionSummary'
 import { checkToolPermissionLayer3 } from '../features/ai/permissions/permissionCheck'
 import {
-  formatServerContextForPrompt,
-  getHeartbeatConfig,
   getServerProfile,
   getSoul,
   getStandingOrders,
-  setHeartbeatConfig,
   setSoul,
   setStandingOrders,
   upsertServerProfile,
 } from '../features/ai/serverProfile'
 import { handleSessionReply } from '../features/ai/sessionReply'
-import { KOREAN_SYSTEM_PROMPT } from '../features/ai/systemPrompt'
-import {
-  stripThinkTags,
-  stripToolCallSyntax,
-  toComponentV2,
-} from '../features/ai/thinkStripper'
+import { stripThinkTags, toComponentV2 } from '../features/ai/thinkStripper'
 import { roleAssignmentIsSensitive } from '../features/ai/tools/helpers/roleRisk'
 import { delayBeforeToolCall } from '../features/ai/tools/helpers/toolDelay'
 import {
@@ -94,8 +80,6 @@ import { Extension, SubCommandGroup, listener } from '@pikokr/command.ts'
 import {
   ChatInputCommandInteraction,
   EmbedBuilder,
-  type Guild,
-  type GuildTextBasedChannel,
   type Message,
   type MessageComponentInteraction,
   type MessageCreateOptions,
@@ -106,49 +90,144 @@ import {
   PermissionFlagsBits,
 } from 'discord.js'
 
+// zai-proxy가 가끔 무응답/일시 오류를 내므로 HTTP 요청 단위로 5회까지
+// 시도하고, 전부 실패하면 체인이 폴백(gemma4)으로 강등한다. 타임아웃이
+// 있어야 "응답이 아예 안 오는" hang도 실패로 집계돼 재시도가 돈다.
+const PRIMARY_MAX_ATTEMPTS = 5
+const PRIMARY_REQUEST_TIMEOUT_MS = 60_000
+// 로컬 gemma4는 CPU 추론(~1.5 tok/s)이라 정상 응답도 수 분 걸릴 수 있어
+// 타임아웃을 넉넉히 주고, 재시도는 2회만.
+const FALLBACK_MAX_ATTEMPTS = 2
+const FALLBACK_REQUEST_TIMEOUT_MS = 600_000
+
 function buildProvider(): ProviderAdapter | undefined {
   const aiConfig = config.ai
+  const primaryConfig = aiConfig.primary
+  if (primaryConfig === undefined) {
+    logger.warn('AI', 'AI provider가 비활성화됨 (dry-run 모드)')
+    return undefined
+  }
 
-  if (
-    aiConfig.geminiApiKey !== undefined &&
-    aiConfig.geminiApiKey.trim().length > 0
-  ) {
-    const gemini = createGeminiProvider({
-      apiKey: aiConfig.geminiApiKey,
-      model: 'gemini-3.1-flash-lite',
-    })
+  try {
+    const primary = createProviderAdapter(primaryConfig, 'primary')
+    const fallbackConfigs = aiConfig.fallbacks ?? []
+    const fallbacks: ProviderAdapter[] = []
+    const validFallbackDescs: string[] = []
 
-    if (
-      aiConfig.provider === 'opencode-zen' &&
-      aiConfig.apiKey !== undefined &&
-      aiConfig.apiKey.trim().length > 0
-    ) {
-      const zen = createOpencodeZenProvider({
-        apiKey: aiConfig.apiKey,
-        model: aiConfig.model,
-      })
-      logger.info('AI', 'Gemini + OpenCode Zen 체인 구성 완료')
-      return createAiProviderChain({ primary: gemini, fallback: zen })
+    for (const cfg of fallbackConfigs) {
+      try {
+        fallbacks.push(createProviderAdapter(cfg, 'fallback'))
+        validFallbackDescs.push(describeProvider(cfg))
+      } catch (fbErr) {
+        logger.warn(
+          'AI',
+          `폴백 provider(${describeProvider(cfg)}) 초기화 실패, 건너뜁니다: ${
+            fbErr instanceof Error ? fbErr.message : String(fbErr)
+          }`
+        )
+      }
     }
 
-    logger.info('AI', 'Gemini 단일 provider 구성 완료')
-    return gemini
+    logger.info(
+      'AI',
+      `AI 두뇌 구성 완료 (primary=${describeProvider(primaryConfig)}${
+        validFallbackDescs.length > 0
+          ? `, fallbacks=[${validFallbackDescs.join(', ')}]`
+          : ''
+      }) · 컨텍스트 예산: ${
+        config.ai.contextTokens !== undefined
+          ? `${config.ai.contextTokens} (config 설정값)`
+          : `자동 (primary=${resolveContextTokens(primaryConfig)})`
+      }`
+    )
+    // 체인으로 감싸 primary→fallbacks 순서→dry-run 사과 순으로 우아하게 강등.
+    return createAiProviderChain({ primary, fallbacks })
+  } catch (error) {
+    logger.warn(
+      'AI',
+      `AI provider 구성 실패 — dry-run 모드로 강등 (${
+        error instanceof Error ? error.message : String(error)
+      })`
+    )
+    return undefined
   }
+}
 
-  if (
-    aiConfig.provider === 'opencode-zen' &&
-    aiConfig.apiKey !== undefined &&
-    aiConfig.apiKey.trim().length > 0
-  ) {
-    logger.info('AI', 'OpenCode Zen 단일 provider 구성 완료')
-    return createOpencodeZenProvider({
-      apiKey: aiConfig.apiKey,
-      model: aiConfig.model,
-    })
+function describeProvider(cfg: AiProviderConfig): string {
+  const name = cfg.label ?? cfg.provider
+  return cfg.baseUrl !== undefined ? `${name}@${cfg.baseUrl}` : name
+}
+
+const LOCAL_CONTEXT_TOKENS = 131072 // 128k — 로컬 엔드포인트 기본 컨텍스트 예산
+const CLOUD_CONTEXT_TOKENS = 1048576 // 1m — 클라우드 엔드포인트 기본 컨텍스트 예산
+
+const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1'])
+
+function isLocalEndpoint(baseUrl?: string): boolean {
+  if (baseUrl === undefined) return false // 미지정 시 OpenCode Zen = 클라우드
+  try {
+    const host = new URL(baseUrl).hostname.toLowerCase()
+    if (LOCAL_HOSTNAMES.has(host)) return true
+    // 사설 IPv4 대역(10.x / 192.168.x / 172.16-31.x)도 로컬로 본다.
+    const match = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(host)
+    if (match === null) return false
+    const first = Number(match[1])
+    const second = Number(match[2])
+    if (first === 10) return true
+    if (first === 192 && second === 168) return true
+    return first === 172 && second >= 16 && second <= 31
+  } catch {
+    return false
   }
+}
 
-  logger.warn('AI', 'AI provider가 비활성화됨 (dry-run 모드)')
-  return undefined
+// config에 contextTokens가 있으면 전역 설정값, 없으면 엔드포인트로 자동 감지.
+function resolveContextTokens(cfg: AiProviderConfig): number {
+  return (
+    config.ai.contextTokens ??
+    (isLocalEndpoint(cfg.baseUrl) ? LOCAL_CONTEXT_TOKENS : CLOUD_CONTEXT_TOKENS)
+  )
+}
+
+function createProviderAdapter(
+  cfg: AiProviderConfig,
+  role: 'primary' | 'fallback'
+): ProviderAdapter {
+  switch (cfg.provider) {
+    case 'anthropic': {
+      if (cfg.apiKey === undefined || cfg.apiKey.trim().length === 0) {
+        throw new Error(
+          `anthropic provider에는 apiKey가 필요합니다 (model=${cfg.model})`
+        )
+      }
+      return createAnthropicProvider({
+        apiKey: cfg.apiKey,
+        model: cfg.model,
+        contextTokens: resolveContextTokens(cfg),
+      })
+    }
+    case 'openai-compatible':
+      return createOpencodeZenProvider({
+        apiKey: cfg.apiKey ?? '',
+        model: cfg.model,
+        baseUrl: cfg.baseUrl,
+        label: cfg.label ?? cfg.model,
+        reasoningEffort: cfg.reasoningEffort,
+        contextTokens: resolveContextTokens(cfg),
+        maxAttempts:
+          role === 'primary' ? PRIMARY_MAX_ATTEMPTS : FALLBACK_MAX_ATTEMPTS,
+        requestTimeoutMs:
+          role === 'primary'
+            ? PRIMARY_REQUEST_TIMEOUT_MS
+            : FALLBACK_REQUEST_TIMEOUT_MS,
+      })
+    default:
+      throw new Error(
+        `지원하지 않거나 누락된 provider입니다: ${String(
+          (cfg as { provider?: unknown }).provider
+        )}`
+      )
+  }
 }
 
 const agentGroup = new SubCommandGroup({
@@ -158,12 +237,6 @@ const agentGroup = new SubCommandGroup({
 
 const MAX_STANDING_ORDERS = 10
 
-// heartbeat(자동 발화) 파라미터
-const HEARTBEAT_POLL_MS = 30 * 60 * 1000 // 30분마다 폴링(게이트 통과 시에만 AI 호출)
-const HEARTBEAT_MAX_PER_DAY = 4 // 채널당 하루 자동 발화 상한
-const HEARTBEAT_DAY_MS = 24 * 60 * 60 * 1000
-const HEARTBEAT_COOLDOWN_MS = 2 * 60 * 60 * 1000 // 발화 후 최소 2시간 쿨다운(연쇄 발화 방지)
-
 class AiMentionExtensionClass extends Extension {
   private provider: ProviderAdapter | undefined
   private toolRegistry: ToolRegistry | undefined
@@ -171,9 +244,6 @@ class AiMentionExtensionClass extends Extension {
   private pendingApprovals = new Map<string, ApprovalProposal>()
   // `/에이전트 셋업` 패널에서 채널 용도 편집 대상으로 고른 채널 (guildId → channelId)
   private panelSelectedChannel = new Map<string, string | null>()
-  // heartbeat 상태 — 폴링 중복 방지 + 채널별 발화 시각(RAM rate-limit).
-  private heartbeatBusy = false
-  private readonly heartbeatSpokeAt = new Map<string, number[]>()
 
   private buildToolDefinitions(
     context: ToolExecutionContext,
@@ -261,13 +331,6 @@ class AiMentionExtensionClass extends Extension {
     this.provider = buildProvider()
     this.toolRegistry = createToolRegistry(this.client)
     await loadAiSessions()
-    // 실행부 주입 후, DB의 활성 예약을 croner에 재등록(봇 생존 동안만 스케줄).
-    setCronRunner((job) => this.runScheduledJob(job))
-    await loadAndRegisterAll()
-    // heartbeat 폴링 시작. 기본 OFF라 대부분 게이트에서 걸러지고, 실제 AI 호출은 드물다.
-    setInterval(() => {
-      void this.runHeartbeat()
-    }, HEARTBEAT_POLL_MS).unref?.()
   }
 
   @listener({ event: 'messageCreate' })
@@ -645,230 +708,6 @@ class AiMentionExtensionClass extends Extension {
     }
   }
 
-  // cron 트리거 시 실행: 저장된 요청(prompt)으로 AI 턴을 돌리고 결과를 채널에 전송한다.
-  // danger 도구는 여기서도 승인 게이트를 거친다(사람이 승인해야 실제 실행 → fail-safe).
-  async runScheduledJob(job: CronJob): Promise<void> {
-    if (this.provider === undefined) return
-    const prompt =
-      typeof job.payload.prompt === 'string' ? job.payload.prompt.trim() : ''
-    if (prompt.length === 0) {
-      logger.warn('Cron', `예약 id=${job.id}에 실행할 요청이 없어요.`)
-      return
-    }
-    if (job.channelId === null) return
-
-    const guild = this.client.guilds.cache.get(job.guildId)
-    if (guild === undefined) return
-    const channel = guild.channels.cache.get(job.channelId)
-    if (channel === undefined || !channel.isTextBased()) return
-
-    // 등록자 권한으로 도구 노출을 결정(등록자가 못 하는 건 예약으로도 못 함).
-    const member = await guild.members.fetch(job.createdBy).catch(() => null)
-    const hasManageGuild =
-      member?.permissions.has(PermissionFlagsBits.ManageGuild) ?? false
-    const hasAdmin =
-      member?.permissions.has(PermissionFlagsBits.Administrator) ?? false
-    const permissionSummary = summarizeMemberPermissions(member?.permissions, {
-      isOwner: guild.ownerId === job.createdBy,
-    })
-
-    const context: ToolExecutionContext = {
-      guildId: job.guildId,
-      guildName: guild.name,
-      userId: job.createdBy,
-      channelId: job.channelId,
-    }
-    const collector = createProposalCollector()
-    const tools = this.buildToolDefinitions(
-      context,
-      hasManageGuild,
-      hasAdmin,
-      collector
-    )
-
-    const serverContextBlock = await formatServerContextForPrompt(
-      job.guildId,
-      job.channelId
-    )
-    const promptParts = [KOREAN_SYSTEM_PROMPT, serverContextBlock].filter(
-      (part) => part.length > 0
-    )
-
-    try {
-      const result = await this.provider.generate(
-        `[예약된 작업 실행 - 등록자 권한: ${permissionSummary}] ${prompt}`,
-        [],
-        {
-          tools,
-          maxSteps: 20,
-          systemPrompt:
-            promptParts.length > 1 ? promptParts.join('\n\n') : undefined,
-        }
-      )
-
-      const text = stripToolCallSyntax(stripThinkTags(result.text)).trim()
-      const body = text.length > 0 ? text : '예약된 작업을 처리했어요.'
-      const v2 = toComponentV2(body)
-      const sentMsg = await channel.send({ content: '', ...v2 })
-
-      // 등록자 채널 세션에 남겨 답장으로 이어갈 수 있게 한다.
-      const sessionKey = getOrCreateSession(
-        job.guildId,
-        job.channelId,
-        job.createdBy
-      )
-      appendToSession(sessionKey, {
-        content: `[예약 실행] ${prompt}`,
-        role: 'user',
-      })
-      appendToSession(
-        sessionKey,
-        { content: body, role: 'assistant' },
-        sentMsg.id
-      )
-      if (result.toolRecords.length > 0) {
-        appendToToolHistory(sessionKey, result.toolRecords)
-      }
-
-      // 보류된 danger 도구는 승인 카드로 채널에 전송(사람이 승인해야 실행).
-      await this.sendApprovalCards(
-        (payload) => channel.send(payload),
-        collector
-      )
-    } catch (err) {
-      logger.error(
-        'Cron',
-        `예약 실행 중 오류 id=${job.id}: ${
-          err instanceof Error ? err.message : String(err)
-        }`
-      )
-    }
-  }
-
-  // ── Heartbeat: 폴링 → 5중 게이트 → 통과 시에만 AI turn(먼저 말 걸기) ──
-
-  private isQuietHours(): boolean {
-    // KST 23~8시엔 자동 발화 금지.
-    const hour = Number(
-      new Date().toLocaleString('en-US', {
-        timeZone: 'Asia/Seoul',
-        hour: '2-digit',
-        hour12: false,
-      })
-    )
-    if (!Number.isFinite(hour)) return false
-    return hour >= 23 || hour < 8
-  }
-
-  private canHeartbeatSpeak(channelId: string): boolean {
-    const now = Date.now()
-    const recent = (this.heartbeatSpokeAt.get(channelId) ?? []).filter(
-      (t) => t > now - HEARTBEAT_DAY_MS
-    )
-    // rate-limit: 하루 상한
-    if (recent.length >= HEARTBEAT_MAX_PER_DAY) return false
-    // 쿨다운: 마지막 발화로부터 최소 2시간(발화 직후 답장에 연쇄 발화 방지)
-    const last = recent.length > 0 ? recent[recent.length - 1] : 0
-    if (now - last < HEARTBEAT_COOLDOWN_MS) return false
-    return true
-  }
-
-  private markHeartbeatSpoke(channelId: string): void {
-    const now = Date.now()
-    const recent = (this.heartbeatSpokeAt.get(channelId) ?? []).filter(
-      (t) => t > now - HEARTBEAT_DAY_MS
-    )
-    recent.push(now)
-    this.heartbeatSpokeAt.set(channelId, recent)
-  }
-
-  // 폴링 틱: 값싼 게이트를 먼저 통과해야만 AI turn을 돌린다(폴링 자체는 AI 없음).
-  private async runHeartbeat(): Promise<void> {
-    if (this.provider === undefined) return
-    if (this.heartbeatBusy) return // 이전 폴링이 아직 진행 중이면 스킵
-    this.heartbeatBusy = true
-    try {
-      // 게이트: cron 실행 중이면 이번 틱은 defer(겹발화 방지)
-      if (isAnyJobRunning()) return
-      // 게이트: 조용 시간대(KST 23~8시)
-      if (this.isQuietHours()) return
-
-      for (const guild of this.client.guilds.cache.values()) {
-        const profile = await getServerProfile(guild.id)
-        const hb = getHeartbeatConfig(profile)
-        if (!hb.enabled) continue // 게이트: OFF(기본)
-        if (hb.channelId === null) continue // 게이트: 발화 채널 미지정
-        if (!this.canHeartbeatSpeak(hb.channelId)) continue // 게이트: rate-limit
-        const channel = guild.channels.cache.get(hb.channelId)
-        if (channel === undefined || !channel.isTextBased()) continue
-        await this.heartbeatSpeak(guild, channel, hb.channelId)
-      }
-    } catch (err) {
-      logger.error(
-        'Heartbeat',
-        `폴링 오류: ${err instanceof Error ? err.message : String(err)}`
-      )
-    } finally {
-      this.heartbeatBusy = false
-    }
-  }
-
-  // 실제 발화 판단 AI turn. "먼저 말 걸 이유 없으면 NO_REPLY". 위험 도구는 승인 게이트 그대로.
-  private async heartbeatSpeak(
-    guild: Guild,
-    channel: GuildTextBasedChannel,
-    channelId: string
-  ): Promise<void> {
-    if (this.provider === undefined) return
-    const botId = this.client.user?.id ?? ''
-    const context: ToolExecutionContext = {
-      guildId: guild.id,
-      guildName: guild.name,
-      userId: botId,
-      channelId,
-    }
-    const collector = createProposalCollector()
-    // 자동 발화는 봇 자율 행동이라 관리 권한 없는 도구만 노출(danger는 어차피 승인 게이트).
-    const tools = this.buildToolDefinitions(context, false, false, collector)
-    const serverContextBlock = await formatServerContextForPrompt(
-      guild.id,
-      channelId
-    )
-    const promptParts = [KOREAN_SYSTEM_PROMPT, serverContextBlock].filter(
-      (part) => part.length > 0
-    )
-    const result = await this.provider.generate(
-      '지금 이 채널에서 사용자에게 먼저 말을 걸 만한 자연스러운 이유가 있는지 스스로 판단해줘. 먼저 말 걸 이유가 없으면 다른 말 없이 정확히 "NO_REPLY"라고만 답해. 있으면 짧고 자연스럽게 말을 걸어줘.',
-      [],
-      {
-        tools,
-        maxSteps: 10,
-        systemPrompt:
-          promptParts.length > 1 ? promptParts.join('\n\n') : undefined,
-      }
-    )
-    const text = stripToolCallSyntax(stripThinkTags(result.text)).trim()
-    // NO_REPLY는 정확히 일치할 때만 무발화(부분 포함 오탐 방지).
-    if (text.length === 0 || text.toUpperCase() === 'NO_REPLY') {
-      return // 무발화
-    }
-
-    const v2 = toComponentV2(text)
-    const sentMsg = await channel.send({ content: '', ...v2 })
-    this.markHeartbeatSpoke(channelId)
-
-    const sessionKey = getOrCreateSession(guild.id, channelId, botId)
-    appendToSession(
-      sessionKey,
-      { content: text, role: 'assistant' },
-      sentMsg.id
-    )
-    if (result.toolRecords.length > 0) {
-      appendToToolHistory(sessionKey, result.toolRecords)
-    }
-    await this.sendApprovalCards((payload) => channel.send(payload), collector)
-  }
-
   @listener({ event: 'interactionCreate' })
   async onboardingInteraction(interaction: MessageComponentInteraction) {
     if (!interaction.isButton()) return
@@ -1233,7 +1072,6 @@ class AiMentionExtensionClass extends Extension {
       soul: getSoul(profile),
       concept: profile.concept,
       dangerGate: profile.approvalPolicy.dangerGate,
-      heartbeat: getHeartbeatConfig(profile),
       standingOrders: getStandingOrders(profile),
       channelRoles: profile.channelRoles,
       selectedChannelId,
@@ -1310,9 +1148,6 @@ class AiMentionExtensionClass extends Extension {
       if (proposal.context.guildId === guild.id) pendingCount++
     }
 
-    const jobs = await listCronJobs(guild.id)
-    const enabledJobs = jobs.filter((job) => job.enabled).length
-    const hb = getHeartbeatConfig(profile)
     const orders = getStandingOrders(profile)
     const soul = getSoul(profile)
 
@@ -1339,9 +1174,6 @@ class AiMentionExtensionClass extends Extension {
           ? `${soul.slice(0, 119)}…`
           : soul
         : '미설정'
-    const heartbeatLine = hb.enabled
-      ? `켜짐${hb.channelId !== null ? ` (<#${hb.channelId}>)` : ''}`
-      : '꺼짐'
 
     await replyEphemeral(
       i,
@@ -1353,8 +1185,7 @@ class AiMentionExtensionClass extends Extension {
         `- 위험 작업 승인 정책: ${
           DANGER_GATE_LABELS[profile.approvalPolicy.dangerGate]
         }`,
-        `- 자동 발화: ${heartbeatLine}`,
-        `- 활성 세션: ${activeSessions}개 · 승인 대기: ${pendingCount}건 · 예약: ${enabledJobs}건`,
+        `- 활성 세션: ${activeSessions}개 · 승인 대기: ${pendingCount}건`,
         '- 채널 용도:',
         channelLines,
         `- 온보딩: ${onboardingLine}`,
@@ -1406,22 +1237,6 @@ class AiMentionExtensionClass extends Extension {
 
       if (
         interaction.isChannelSelectMenu() &&
-        action === AGENT_CFG_ACTIONS.hbChannel
-      ) {
-        const channelId = interaction.values[0] ?? null
-        const profile = await getServerProfile(guildId)
-        const hb = getHeartbeatConfig(profile)
-        await setHeartbeatConfig(guildId, {
-          // 채널을 비우면 발화 대상이 없으므로 자동 발화도 끈다.
-          enabled: channelId === null ? false : hb.enabled,
-          channelId,
-        })
-        await this.updatePanel(interaction, guildId)
-        return
-      }
-
-      if (
-        interaction.isChannelSelectMenu() &&
         action === AGENT_CFG_ACTIONS.roleChannel
       ) {
         this.panelSelectedChannel.set(guildId, interaction.values[0] ?? null)
@@ -1430,23 +1245,6 @@ class AiMentionExtensionClass extends Extension {
       }
 
       if (!interaction.isButton()) return
-
-      if (action === AGENT_CFG_ACTIONS.hbToggle) {
-        const profile = await getServerProfile(guildId)
-        const hb = getHeartbeatConfig(profile)
-        if (hb.enabled) {
-          await setHeartbeatConfig(guildId, {
-            enabled: false,
-            channelId: hb.channelId,
-          })
-        } else {
-          // 켤 때 채널 미지정이면 패널을 연 채널로 기본 설정.
-          const channelId = hb.channelId ?? interaction.channelId
-          await setHeartbeatConfig(guildId, { enabled: true, channelId })
-        }
-        await this.updatePanel(interaction, guildId)
-        return
-      }
 
       if (action === AGENT_CFG_ACTIONS.soulEdit) {
         const profile = await getServerProfile(guildId)

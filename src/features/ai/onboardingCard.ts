@@ -51,7 +51,7 @@ export function buildOnboardingCard(guildId: string): {
   flags: number
 } {
   const body = [
-    '🌙 **FullMoon 에이전트 온보딩**',
+    '🌙 **LisyBot 에이전트 온보딩**',
     '',
     '안녕하세요! 이 서버에서 처음 만났네요.',
     '저는 서버 관리를 도와주는 AI 에이전트예요. 몇 가지 설정을 해두면 더 잘 도와드릴 수 있어요.',
@@ -90,7 +90,7 @@ export function buildOnboardingCard(guildId: string): {
         .setDivider(true)
         .setSpacing(SeparatorSpacingSize.Small),
       new TextDisplayBuilder().setContent(
-        '-# `/에이전트 설정` 명령어로 나중에 언제든 설정할 수 있어요.'
+        '-# `/에이전트 셋업` 명령어로 나중에 언제든 설정할 수 있어요.'
       ),
       buttons,
     ],
@@ -106,7 +106,7 @@ export function buildOnboardingResolvedCard(statusLine: string): {
 } {
   return {
     components: [
-      new TextDisplayBuilder().setContent('🌙 **FullMoon 에이전트 온보딩**'),
+      new TextDisplayBuilder().setContent('🌙 **LisyBot 에이전트 온보딩**'),
       new SeparatorBuilder()
         .setDivider(true)
         .setSpacing(SeparatorSpacingSize.Small),

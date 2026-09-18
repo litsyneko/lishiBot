@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "entries": {
+    "466399dafa2d20f60587180bad0a07358eb7f2bce724df0ff682f038ad33f5ad": {
+      "last_emitted_at_ms": 1783666874845,
+      "message": "Read multiple files in parallel when possible for faster analysis."
+    },
+    "445ed27a3872b681d98190bae61ccb84954e1bc4e140df5370be958dee776b3a": {
+      "last_emitted_at_ms": 1783666861223,
+      "message": "Verify changes work after editing. Test functionality before marking complete."
+    },
+    "79a93d4a2f8f50b95f852280616242fee1855dc99a3c75211917f55e72e95fae": {
+      "last_emitted_at_ms": 1783666769168,
+      "message": "Use parallel execution for independent tasks. Use run_in_background for long operations (npm install, builds, tests)."
+    },
+    "6c514957c8c9a9ccc8c7f82ce15b1cb6f121cb5841fc7405da082c3a9891ff64": {
+      "last_emitted_at_ms": 1783665369174,
+      "message": "Spawning agent: oh-my-claudecode:code-reviewer (sonnet) | Task: 서버 로그 diff 코드 리뷰"
+    }
+  },
+  "updated_at": "2026-07-10T07:01:14.845Z"
+}

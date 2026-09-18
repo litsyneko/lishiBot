@@ -1,0 +1,7 @@
+{
+  "tool_name": "mcp__context7__resolve-library-id",
+  "tool_input_preview": "{\"query\":\"discord.js components v2 channel select menu action row limits\"}",
+  "error": "MCP error -32602: Input validation error: Invalid arguments for tool resolve-library-id: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"libraryName\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n]",
+  "timestamp": "2026-07-14T04:24:24.854Z",
+  "retry_count": 2
+}

@@ -7,13 +7,13 @@ import {
 } from 'discord.js'
 
 const memoryGroup = new SubCommandGroup({
-  name: 'memory',
+  name: '메모리',
   description: 'AI 메모리를 관리합니다',
 })
 
 class MemoryExtension extends Extension {
   @memoryGroup.command({
-    name: 'list',
+    name: '목록',
     description: '저장된 메모리를 확인합니다',
   })
   async list(i: ChatInputCommandInteraction) {
@@ -50,15 +50,15 @@ class MemoryExtension extends Extension {
   }
 
   @memoryGroup.command({
-    name: 'delete',
+    name: '삭제',
     description: '특정 메모리를 삭제합니다',
   })
   async delete(
     i: ChatInputCommandInteraction,
     @option({
       type: ApplicationCommandOptionType.Integer,
-      name: 'number',
-      description: '삭제할 메모리 번호 (list 명령어로 확인)',
+      name: '번호',
+      description: '삭제할 메모리 번호 (목록 명령어로 확인)',
       required: true,
       min_value: 1,
     })
@@ -77,7 +77,7 @@ class MemoryExtension extends Extension {
     const target = memories[number - 1]
     if (target === undefined) {
       await i.reply({
-        content: `❌ ${number}번 메모리가 없어요. /memory list로 번호를 확인해주세요.`,
+        content: `❌ ${number}번 메모리가 없어요. /메모리 목록으로 번호를 확인해주세요.`,
         flags: MessageFlags.Ephemeral,
       })
       return
@@ -93,7 +93,7 @@ class MemoryExtension extends Extension {
   }
 
   @memoryGroup.command({
-    name: 'clear',
+    name: '초기화',
     description: '모든 메모리를 초기화합니다',
   })
   async clear(i: ChatInputCommandInteraction) {

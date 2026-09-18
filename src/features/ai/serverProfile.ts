@@ -325,37 +325,3 @@ export async function setOnboardingDismissedUntil(
     agentScope: { ...profile.agentScope, [ONBOARDING_DISMISSED_KEY]: until },
   })
 }
-
-// ── Heartbeat(자동 발화) 설정 — agent_scope에 저장, 기본 OFF ──
-
-export type HeartbeatConfig = {
-  readonly enabled: boolean
-  readonly channelId: string | null
-}
-
-const HEARTBEAT_KEY = 'heartbeat'
-const DEFAULT_HEARTBEAT: HeartbeatConfig = { enabled: false, channelId: null }
-
-/** agent_scope에서 heartbeat 설정을 꺼낸다. 기본은 OFF(자동 발화 안 함). */
-export function getHeartbeatConfig(profile: ServerProfile): HeartbeatConfig {
-  const raw = profile.agentScope[HEARTBEAT_KEY]
-  if (raw !== null && typeof raw === 'object' && !Array.isArray(raw)) {
-    const obj = raw as Record<string, unknown>
-    return {
-      enabled: obj.enabled === true,
-      channelId: typeof obj.channelId === 'string' ? obj.channelId : null,
-    }
-  }
-  return DEFAULT_HEARTBEAT
-}
-
-/** heartbeat 설정을 저장한다(agent_scope 병합, 다른 scope 값 보존). */
-export async function setHeartbeatConfig(
-  guildId: string,
-  config: HeartbeatConfig
-): Promise<void> {
-  const profile = await getServerProfile(guildId)
-  await upsertServerProfile(guildId, {
-    agentScope: { ...profile.agentScope, [HEARTBEAT_KEY]: config },
-  })
-}

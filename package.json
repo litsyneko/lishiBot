@@ -17,17 +17,24 @@
     "typescript": "^5.4.0"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.40",
     "@ai-sdk/google": "^4.0.0",
     "@ai-sdk/openai-compatible": "^3.0.0",
     "@discordjs/builders": "^1.14.1",
     "@discordjs/rest": "^2.6.1",
+    "@discordjs/voice": "^0.19.2",
     "@napi-rs/canvas": "^1.0.1",
     "@pikokr/command.ts": "^5.4.0",
     "@supabase/supabase-js": "^2.108.2",
     "ai": "^7.0.2",
+    "badwords-ko": "^1.0.4",
+    "croner": "^10.0.1",
     "discord-api-types": "^0.38.49",
     "discord.js": "^14.26.4",
+    "ffmpeg-static": "^5.3.0",
     "lavalink-client": "^2.10.3",
+    "libsodium-wrappers": "^0.8.4",
+    "opusscript": "^0.1.1",
     "tslog": "^4.7.1",
     "winston": "^3.19.0",
     "zod": "^4.4.3"
@@ -35,7 +42,9 @@
   "scripts": {
     "build": "tsc",
     "dev": "ts-node --swc src",
+    "dev:tts": "ts-node --swc src/tts",
     "start": "node dist",
+    "start:tts": "node dist/tts",
     "lint": "eslint src --ignore-path .gitignore"
   },
   "packageManager": "pnpm@8.3.1"

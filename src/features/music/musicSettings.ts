@@ -1,3 +1,4 @@
+import { logger } from '../../utils/logger'
 import { getSupabase } from '../ai/supabase'
 
 export type RepeatMode = 'off' | 'track' | 'queue'
@@ -54,23 +55,13 @@ function isControllerTab(
 
 export function createMusicSettingsService(): MusicSettingsService {
   async function ensureTableSchema(): Promise<void> {
-    const supabase = getSupabase()
-    if (supabase === null) return
-
-    const sql = [
-      'ALTER TABLE public.music_settings',
-      'ADD COLUMN IF NOT EXISTS volume INTEGER,',
-      'ADD COLUMN IF NOT EXISTS repeat_mode TEXT,',
-      'ADD COLUMN IF NOT EXISTS controller_tab TEXT,',
-      'ADD COLUMN IF NOT EXISTS queue_visible BOOLEAN;',
-    ].join(' ')
-
-    const { error } = await supabase.rpc('exec_sql', { sql })
-    if (error !== null) {
-      throw new Error(
-        `스키마 마이그레이션 실패: ${error.message}\n실행 SQL: ${sql}`
-      )
-    }
+    // Schema is managed by database migrations — this is a no-op.
+    // The columns volume, repeat_mode, controller_tab, and queue_visible
+    // are added at deployment time, not at runtime.
+    logger.debug(
+      'MusicSettings',
+      'ensureTableSchema: no-op (schema handled by migrations)'
+    )
   }
 
   async function getSettings(

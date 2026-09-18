@@ -16,5 +16,12 @@ module.exports = {
       cwd: __dirname,
       interpreter: 'none',
     },
+    {
+      name: 'lishibot-tts',
+      script: 'pnpm',
+      args: 'start:tts',
+      cwd: __dirname,
+      interpreter: 'none',
+    },
   ],
 }

@@ -1,6 +1,5 @@
 import { formatWon } from '../config/korea'
 import { createEconomyService } from '../features/economy/economy'
-import { renderLevelCard } from '../features/economy/levelCard'
 import {
   pickAttendanceMessage,
   pickLotteryMessage,
@@ -9,23 +8,31 @@ import { replyEphemeral, replyPublic } from '../utils/replies'
 import { Extension, SubCommandGroup, option } from '@pikokr/command.ts'
 import {
   ApplicationCommandOptionType,
-  AttachmentBuilder,
   ChatInputCommandInteraction,
-  MessageFlags,
 } from 'discord.js'
 
 const economyGroup = new SubCommandGroup({
   name: '경제',
-  description: 'FullMoon 경제 명령어',
+  description: 'LisyBot 경제 명령어',
 })
 
 const economy = createEconomyService()
 
+// 경제는 서버 전용이다. 서버 밖(DM)에서 호출되면 guildId가 없다.
+function requireGuildId(i: ChatInputCommandInteraction): string | null {
+  return i.guildId
+}
+
 class EconomyExtensionClass extends Extension {
   @economyGroup.command({ name: '잔액', description: '내 잔액을 확인합니다.' })
   async balance(i: ChatInputCommandInteraction) {
+    const guildId = requireGuildId(i)
+    if (guildId === null) {
+      await replyEphemeral(i, '이 명령어는 서버에서만 사용할 수 있어요.')
+      return
+    }
     try {
-      const result = await economy.getBalance(i.user.id)
+      const result = await economy.getBalance(guildId, i.user.id)
       await replyEphemeral(i, result.label)
     } catch (err) {
       await replyEphemeral(
@@ -40,8 +47,14 @@ class EconomyExtensionClass extends Extension {
     description: '매일 출석 보상을 받습니다.',
   })
   async attendance(i: ChatInputCommandInteraction) {
+    const guildId = requireGuildId(i)
+    if (guildId === null) {
+      await replyEphemeral(i, '이 명령어는 서버에서만 사용할 수 있어요.')
+      return
+    }
     try {
       await economy.claimAttendance({
+        guildId,
         now: new Date(),
         userId: i.user.id,
       })
@@ -77,10 +90,16 @@ class EconomyExtensionClass extends Extension {
     })
     amount: number
   ) {
+    const guildId = requireGuildId(i)
+    if (guildId === null) {
+      await replyEphemeral(i, '이 명령어는 서버에서만 사용할 수 있어요.')
+      return
+    }
     try {
       const targetUser = i.options.getUser('받는사람', true)
       const result = await economy.transfer({
         amount,
+        guildId,
         fromUserId: i.user.id,
         toUserId: targetUser.id,
       })
@@ -98,8 +117,13 @@ class EconomyExtensionClass extends Extension {
     description: '도박 수익/손실 순위를 확인합니다.',
   })
   async ranking(i: ChatInputCommandInteraction) {
+    const guildId = requireGuildId(i)
+    if (guildId === null) {
+      await replyEphemeral(i, '이 명령어는 서버에서만 사용할 수 있어요.')
+      return
+    }
     try {
-      const ranking = await economy.getRanking(10)
+      const ranking = await economy.getRanking(guildId, 10)
       if (ranking.length === 0) {
         await replyPublic(i, '아직 도박 기록이 없어요.')
         return
@@ -126,8 +150,13 @@ class EconomyExtensionClass extends Extension {
     description: '일일 퀘스트 진행도를 확인하거나 보상을 받습니다.',
   })
   async quest(i: ChatInputCommandInteraction) {
+    const guildId = requireGuildId(i)
+    if (guildId === null) {
+      await replyEphemeral(i, '이 명령어는 서버에서만 사용할 수 있어요.')
+      return
+    }
     try {
-      const progress = await economy.getQuestProgress(i.user.id)
+      const progress = await economy.getQuestProgress(guildId, i.user.id)
       if (progress.claimed) {
         await replyEphemeral(
           i,
@@ -147,7 +176,7 @@ class EconomyExtensionClass extends Extension {
       } 가위바위보 1회 (${progress.rpsCount}/1)\n\n보상: ${formatWon(5000)}`
 
       if (allDone) {
-        const result = await economy.claimQuestReward(i.user.id)
+        const result = await economy.claimQuestReward(guildId, i.user.id)
         await replyPublic(i, `${status}\n\n${result.message}`)
       } else {
         await replyEphemeral(i, status)
@@ -165,8 +194,13 @@ class EconomyExtensionClass extends Extension {
     description: '주 1회 무료 복권! 대박을 노려보세요.',
   })
   async lottery(i: ChatInputCommandInteraction) {
+    const guildId = requireGuildId(i)
+    if (guildId === null) {
+      await replyEphemeral(i, '이 명령어는 서버에서만 사용할 수 있어요.')
+      return
+    }
     try {
-      const result = await economy.claimLottery(i.user.id)
+      const result = await economy.claimLottery(guildId, i.user.id)
       const msg = pickLotteryMessage(
         `<@${i.user.id}>`,
         result.prize,
@@ -177,94 +211,6 @@ class EconomyExtensionClass extends Extension {
       await replyEphemeral(
         i,
         err instanceof Error ? err.message : '복권 참여 중 오류가 발생했어요.'
-      )
-    }
-  }
-
-  @economyGroup.command({
-    name: '보상랭킹',
-    description: '선착 보상 수령 랭킹을 확인합니다.',
-  })
-  async dropRanking(i: ChatInputCommandInteraction) {
-    try {
-      const guild = i.guild
-      if (guild === null) return
-
-      const ranking = await economy.getDropLeaderboard(guild.id, 10)
-      if (ranking.length === 0) {
-        await replyPublic(i, '아직 선착 보상 수령 기록이 없어요.')
-        return
-      }
-
-      const lines = ranking.map((r, idx) => {
-        return `${idx + 1}. <@${r.userId}> | ${
-          r.totalClaimed
-        }회 수령 | ${formatWon(r.totalAmount)}`
-      })
-
-      await replyPublic(
-        i,
-        `🎁 **선착 보상 랭킹 TOP 10**\n\n${lines.join('\n')}`
-      )
-    } catch (err) {
-      await replyEphemeral(
-        i,
-        err instanceof Error ? err.message : '랭킹 조회 중 오류가 발생했어요.'
-      )
-    }
-  }
-
-  @economyGroup.command({
-    name: '레벨',
-    description: '내 레벨과 경험치를 확인합니다.',
-  })
-  async level(i: ChatInputCommandInteraction) {
-    try {
-      const result = await economy.getLevel(i.user.id)
-      const xpNeeded = result.level * result.level * 300
-      const [balance, bankBalance] = await Promise.all([
-        economy.getBalance(i.user.id),
-        economy.getBankBalance(i.user.id),
-      ])
-      const avatarUrl = i.user.displayAvatarURL({
-        extension: 'png',
-        size: 256,
-      })
-
-      const png = await renderLevelCard({
-        level: result.level,
-        xp: result.xp,
-        xpNeeded,
-        balance: balance.amount,
-        bankBalance,
-        username: i.user.username,
-        avatarUrl,
-      })
-
-      const attachment = new AttachmentBuilder(png, {
-        name: `level-${i.user.id}.png`,
-      })
-
-      const caption = `📊 **${i.user.username}** 님 — 레벨 **${
-        result.level
-      }** · XP ${result.xp.toLocaleString()} / ${xpNeeded.toLocaleString()}`
-
-      if (i.deferred || i.replied) {
-        await i.followUp({
-          content: caption,
-          files: [attachment],
-        })
-        return
-      }
-      await i.reply({
-        content: caption,
-        files: [attachment],
-        flags: MessageFlags.SuppressEmbeds,
-      })
-    } catch (err) {
-      await replyEphemeral(
-        i,
-        err instanceof Error ? err.message : '레벨 조회 중 오류가 발생했어요.'
       )
     }
   }
@@ -297,10 +243,15 @@ class EconomyExtensionClass extends Extension {
     })
     amount: number
   ) {
+    const guildId = requireGuildId(i)
+    if (guildId === null) {
+      await replyEphemeral(i, '이 명령어는 서버에서만 사용할 수 있어요.')
+      return
+    }
     try {
       if (action === '조회') {
-        const bankBalance = await economy.getBankBalance(i.user.id)
-        const balance = await economy.getBalance(i.user.id)
+        const bankBalance = await economy.getBankBalance(guildId, i.user.id)
+        const balance = await economy.getBalance(guildId, i.user.id)
         await replyPublic(
           i,
           `🏦 **은행 잔액**\n\n지갑: ${formatWon(
@@ -311,7 +262,7 @@ class EconomyExtensionClass extends Extension {
       }
 
       if (action === '이자') {
-        const result = await economy.claimInterest(i.user.id)
+        const result = await economy.claimInterest(guildId, i.user.id)
         await replyPublic(i, `🏦 ${result.message}`)
         return
       }
@@ -322,7 +273,7 @@ class EconomyExtensionClass extends Extension {
       }
 
       if (action === '입금') {
-        const result = await economy.bankDeposit(i.user.id, amount)
+        const result = await economy.bankDeposit(guildId, i.user.id, amount)
         await replyPublic(
           i,
           `🏦 ${formatWon(amount)}을 입금했어요.\n지갑: ${formatWon(
@@ -333,7 +284,7 @@ class EconomyExtensionClass extends Extension {
       }
 
       if (action === '출금') {
-        const result = await economy.bankWithdraw(i.user.id, amount)
+        const result = await economy.bankWithdraw(guildId, i.user.id, amount)
         await replyPublic(
           i,
           `🏦 ${formatWon(amount)}을 출금했어요.\n지갑: ${formatWon(

@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"cat /home/ubuntu/lishibot/.mcp.json 2>/dev/null; echo \\\"---home---\\\"; cat /home/ubuntu/.mcp.json 2>/dev/null\",\"description\":\"Show .mcp.json contents to verify Supabase MCP registration\"}",
+  "error": "Exit code 1\n{\n  \"mcpServers\": {\n    \"supabase\": {\n      \"type\": \"http\",\n      \"url\": \"https://mcp.supabase.com/mcp?project_ref=cuafgvjzpekcfpqgetbf\"\n    }\n  }\n}---home---",
+  "timestamp": "2026-07-08T02:47:23.225Z",
+  "retry_count": 1
+}

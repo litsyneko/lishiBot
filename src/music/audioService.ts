@@ -5,6 +5,7 @@ import {
 } from '../components/musicPanel'
 import { createMusicSettingsService } from '../features/music/musicSettings'
 import { logger } from '../utils/logger'
+import { displayTrackTitle } from '../utils/title'
 import type { CustomPlayer } from './customPlayer'
 import { buildSearchQuery } from './musicService'
 import { setVolume } from './volumeStore'
@@ -76,25 +77,25 @@ export function createAudioService(manager: LavalinkManager<CustomPlayer>) {
 
     const guild = interaction.guild
     if (guild === null) {
-      throw new Error('?�버 ?�보�?찾을 ???�어??')
+      throw new Error('서버 정보를 찾을 수 없어요.')
     }
 
     const voiceChannel = guild.channels.cache.get(player.voiceChannelId ?? '')
     if (voiceChannel === undefined || !voiceChannel.isVoiceBased()) {
-      throw new Error('?�성 채널??찾을 ???�어??')
+      throw new Error('음성 채널을 찾을 수 없어요.')
     }
 
     const me = guild.members.me
     if (me !== null) {
       const permissions = voiceChannel.permissionsFor(me)
       if (permissions === null) {
-        throw new Error('봇의 권한???�인?????�어??')
+        throw new Error('봇의 권한을 확인할 수 없어요.')
       }
       if (!permissions.has(PermissionFlagsBits.Connect)) {
-        throw new Error('봇이 ?�성 채널???�속??권한???�어??')
+        throw new Error('봇이 음성 채널에 접속할 권한이 없어요.')
       }
       if (!permissions.has(PermissionFlagsBits.Speak)) {
-        throw new Error('봇이 ?�성 채널?�서 말할 권한???�어??')
+        throw new Error('봇이 음성 채널에서 말할 권한이 없어요.')
       }
     }
 
@@ -104,9 +105,9 @@ export function createAudioService(manager: LavalinkManager<CustomPlayer>) {
       const reason = error instanceof Error ? error.message : String(error)
       logger.error(
         'AudioService',
-        `?�성 채널 ?�결 ?�패 (${player.guildId}): ${reason}`
+        `음성 채널 연결 실패 (${player.guildId}): ${reason}`
       )
-      throw new Error('?�성 채널???�속?????�어??')
+      throw new Error('음성 채널에 접속할 수 없어요.')
     }
   }
 
@@ -131,11 +132,13 @@ export function createAudioService(manager: LavalinkManager<CustomPlayer>) {
     )
 
     if (result.loadType === 'error') {
-      throw new Error('?�악 검??�??�류가 발생?�어?? ?�시 ???�시 ?�도??주세??')
+      throw new Error(
+        '음악 검색 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요.'
+      )
     }
 
     if (result.loadType === 'empty' || result.tracks.length === 0) {
-      throw new Error('검??결과가 ?�어?? ?�른 검?�어�??�시 ?�도??주세??')
+      throw new Error('검색 결과가 없어요. 다른 검색어로 다시 시도해 주세요.')
     }
 
     return result
@@ -146,8 +149,8 @@ export function createAudioService(manager: LavalinkManager<CustomPlayer>) {
    */
   function trackToPanelInfo(track: Track | UnresolvedTrack): PanelTrackInfo {
     return {
-      title: track.info.title,
-      author: track.info.author ?? '?????�음',
+      title: displayTrackTitle(track.info.title),
+      author: track.info.author ?? '알 수 없음',
       durationMs: track.info.duration ?? 0,
       artworkUrl: track.info.artworkUrl ?? undefined,
       identifier: track.info.identifier,
@@ -194,7 +197,7 @@ export function createAudioService(manager: LavalinkManager<CustomPlayer>) {
       (t): t is Track | UnresolvedTrack => t !== null && t !== undefined
     )
     const playlist = searchResult.playlist
-    const playlistName = playlist?.name ?? '?�레?�리?�트'
+    const playlistName = playlist?.name ?? '플레이리스트'
 
     await player.queue.add(tracks)
 
@@ -205,7 +208,7 @@ export function createAudioService(manager: LavalinkManager<CustomPlayer>) {
       firstTrack:
         firstTrack !== undefined
           ? trackToPanelInfo(firstTrack)
-          : { title: playlistName, author: '?????�음', durationMs: 0 },
+          : { title: playlistName, author: '알 수 없음', durationMs: 0 },
     })
 
     await interaction.editReply({

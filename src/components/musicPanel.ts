@@ -138,9 +138,9 @@ function buildNowplayingSection(
   player: CustomPlayer,
   trackInfo: Track['info']
 ): void {
-  const headerText = `-# <a:Lishi_07:1521143128025731263> <#${player.voiceChannelId}> 에서 ${
-    player.paused ? '일시 정지' : '재생'
-  } 중`
+  const headerText = `-# <a:Lishi_07:1521143128025731263> <#${
+    player.voiceChannelId
+  }> 에서 ${player.paused ? '일시 정지' : '재생'} 중`
   const titleLine =
     trackInfo.uri !== undefined && trackInfo.uri.length > 0
       ? `### [${escapeMarkdown(trackInfo.title)}](${trackInfo.uri})`

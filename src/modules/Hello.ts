@@ -9,13 +9,15 @@ import {
   ActivityType,
   ApplicationCommandType,
   ChatInputCommandInteraction,
+  MessageFlags,
   PermissionFlagsBits,
 } from 'discord.js'
 
 const PRESENCE_INTERVAL_MS = 30_000
 const MAX_TRACK_TITLE_LENGTH = 64
 const MAX_UPLOADER_LENGTH = 32
-const PLAYING_EMOJI = '<a:Lishi_07:1521143128025731263>'
+// 봇 상태 메시지에는 커스텀 이모지가 렌더링되지 않으므로 유니코드 이모지 사용
+const PLAYING_EMOJI = '🎵'
 
 function truncateTitle(title: string): string {
   if (title.length <= MAX_TRACK_TITLE_LENGTH) return title
@@ -140,10 +142,28 @@ class HelloExtension extends Extension {
   @applicationCommand({
     name: 'ping',
     type: ApplicationCommandType.ChatInput,
-    description: 'wow this is ping',
+    description: '봇의 응답 속도와 상태를 확인합니다.',
   })
   async ping(i: ChatInputCommandInteraction) {
-    await i.reply(`current ping: ${i.client.ws.ping}ms`)
+    await i.reply({ content: '🏓 측정 중…', flags: MessageFlags.Ephemeral })
+    const roundTrip = Date.now() - i.createdTimestamp
+    const gateway = Math.round(i.client.ws.ping)
+
+    const rate = (ms: number): string => {
+      if (ms < 0) return '측정 불가'
+      if (ms < 150) return '🟢 원활'
+      if (ms < 350) return '🟡 보통'
+      return '🔴 지연'
+    }
+
+    const gatewayText =
+      gateway < 0 ? '`—` (측정 중)' : `\`${gateway}ms\` ${rate(gateway)}`
+
+    await i.editReply(
+      `🏓 **퐁!**\n- 왕복 지연: \`${roundTrip}ms\` ${rate(
+        roundTrip
+      )}\n- 게이트웨이: ${gatewayText}`
+    )
   }
 }
 

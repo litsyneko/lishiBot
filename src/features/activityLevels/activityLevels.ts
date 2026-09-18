@@ -45,6 +45,12 @@ export type LevelRankingEntry = {
 }
 
 export type ActivityLevelService = {
+  readonly adjustXp: (
+    guildId: string,
+    userId: string,
+    track: LevelTrack,
+    delta: number
+  ) => Promise<ActivityLevelStats>
   readonly getRanking: (
     guildId: string,
     track: LevelTrack,
@@ -56,6 +62,11 @@ export type ActivityLevelService = {
   ) => Promise<CombinedLevelStats>
   readonly recordTextActivity: (input: TextActivityInput) => Promise<void>
   readonly recordVoiceSession: (input: VoiceSessionInput) => Promise<void>
+  readonly resetLevels: (
+    guildId: string,
+    userId: string,
+    track: LevelTrack | 'all'
+  ) => Promise<void>
 }
 
 const textXpPerMessage = 15
@@ -239,10 +250,64 @@ export function createActivityLevelService(): ActivityLevelService {
     }))
   }
 
+  // 관리자용 XP 조정. delta가 음수면 차감(0 바닥), 레벨은 DB에서 재계산된다.
+  async function adjustXp(
+    guildId: string,
+    userId: string,
+    track: LevelTrack,
+    delta: number
+  ): Promise<ActivityLevelStats> {
+    const supabase = getSupabase()
+    if (supabase === null) return normalizeStats(1, 0)
+
+    const { data, error } = await supabase.rpc('adjust_guild_level_xp', {
+      p_delta: delta,
+      p_guild_id: guildId,
+      p_track: track,
+      p_user_id: userId,
+    })
+
+    if (error !== null) throw new Error(`레벨 XP 조정 실패: ${error.message}`)
+
+    const row = Array.isArray(data) ? data[0] : data
+    return normalizeStats(Number(row?.level ?? 1), Number(row?.xp ?? 0))
+  }
+
+  // 관리자용 레벨 초기화. 해당 트랙(또는 전체)의 기록 행을 삭제한다.
+  async function resetLevels(
+    guildId: string,
+    userId: string,
+    track: LevelTrack | 'all'
+  ): Promise<void> {
+    const supabase = getSupabase()
+    if (supabase === null) return
+
+    const tables =
+      track === 'all'
+        ? ['guild_text_levels', 'guild_voice_levels']
+        : track === 'text'
+        ? ['guild_text_levels']
+        : ['guild_voice_levels']
+
+    for (const table of tables) {
+      const { error } = await supabase
+        .from(table)
+        .delete()
+        .eq('guild_id', guildId)
+        .eq('user_id', userId)
+
+      if (error !== null) {
+        throw new Error(`레벨 초기화 실패: ${error.message}`)
+      }
+    }
+  }
+
   return {
+    adjustXp,
     getRanking,
     getStats,
     recordTextActivity,
     recordVoiceSession,
+    resetLevels,
   }
 }

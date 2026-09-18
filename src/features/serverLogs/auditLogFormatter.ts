@@ -14,10 +14,13 @@ export type FormattedField = {
 const KEY_LABELS: Readonly<Record<string, string>> = {
   $add: '추가된 역할',
   $remove: '제거된 역할',
+  actions: '자동 모드 조치',
   afk_channel_id: 'AFK 채널',
   afk_timeout: 'AFK 타임아웃',
   allow: '허용 권한',
+  allow_list: '허용 단어 목록',
   application_id: '애플리케이션',
+  applied_tags: '적용된 태그',
   archived: '보관 여부',
   asset: '자산',
   auto_archive_duration: '자동 보관 기간',
@@ -32,8 +35,10 @@ const KEY_LABELS: Readonly<Record<string, string>> = {
   communication_disabled_until: '타임아웃 종료',
   deaf: '청각 차단',
   default_auto_archive_duration: '기본 자동 보관 기간',
+  default_forum_layout: '기본 포럼 레이아웃',
   default_message_notifications: '기본 알림 설정',
   default_reaction_emoji: '기본 반응 이모지',
+  default_sort_order: '기본 정렬 방식',
   default_thread_rate_limit_per_user: '스레드 슬로우모드',
   deny: '거부 권한',
   description: '설명',
@@ -44,6 +49,8 @@ const KEY_LABELS: Readonly<Record<string, string>> = {
   enable_emoticons: '이모티콘 활성화',
   entity_type: '엔티티 유형',
   event_type: '이벤트 유형',
+  exempt_channels: '예외 채널',
+  exempt_roles: '예외 역할',
   expire_behavior: '만료 동작',
   expire_grace_period: '만료 유예 기간',
   explicit_content_filter: '유해 콘텐츠 필터',
@@ -54,11 +61,14 @@ const KEY_LABELS: Readonly<Record<string, string>> = {
   icon_hash: '아이콘',
   id: 'ID',
   image_hash: '이미지',
+  invitable: '초대 가능',
   inviter_id: '초대자',
+  keyword_filter: '금지 키워드',
   location: '위치',
   locked: '잠금',
   max_age: '최대 기간',
   max_uses: '최대 사용 횟수',
+  mention_total_limit: '멘션 최대 개수',
   mentionable: '멘션 가능',
   mfa_level: '2FA 단계',
   mute: '음소거',
@@ -71,10 +81,12 @@ const KEY_LABELS: Readonly<Record<string, string>> = {
   position: '순서',
   preferred_locale: '선호 언어',
   premium_progress_bar_enabled: '부스트 진행바',
+  presets: '검열 프리셋',
   privacy_level: '공개 범위',
   prune_delete_days: '프룬 삭제 일수',
   public_updates_channel_id: '업데이트 채널',
   rate_limit_per_user: '슬로우모드',
+  regex_patterns: '정규식 패턴',
   region: '지역',
   rtc_region: 'RTC 지역',
   rules_channel_id: '규칙 채널',
@@ -115,6 +127,42 @@ const ENTITY_TYPES = ['독립 실행형', '채널', '외부']
 
 const MFA_LEVELS = ['없음', '필수']
 
+const EVENT_STATUS = ['알 수 없음', '예정됨', '진행 중', '종료됨', '취소됨']
+
+const BOOLEAN_KEYS: ReadonlySet<string> = new Set([
+  'archived',
+  'available',
+  'deaf',
+  'enable_emoticons',
+  'enabled',
+  'hoist',
+  'invitable',
+  'locked',
+  'mentionable',
+  'mute',
+  'nsfw',
+  'premium_progress_bar_enabled',
+  'temporary',
+  'widget_enabled',
+])
+
+const CHANNEL_REFERENCE_KEYS: ReadonlySet<string> = new Set([
+  'afk_channel_id',
+  'application_id',
+  'channel_id',
+  'emoji_id',
+  'guild_id',
+  'inviter_id',
+  'owner_id',
+  'public_updates_channel_id',
+  'rules_channel_id',
+  'safety_alerts_channel_id',
+  'sound_id',
+  'system_channel_id',
+  'user_id',
+  'widget_channel_id',
+])
+
 export function formatAuditChange(
   change: ChangeField,
   guild: Guild | undefined
@@ -135,9 +183,11 @@ function formatChangeValue(
   }
 
   if (key === 'permissions' || key === 'allow' || key === 'deny') {
-    return `${formatPermissionBits(oldValue)} -> ${formatPermissionBits(
-      newValue
-    )}`
+    return formatPermissionDiff(oldValue, newValue)
+  }
+
+  if (key === 'communication_disabled_until') {
+    return `${formatIsoTimestamp(oldValue)} -> ${formatIsoTimestamp(newValue)}`
   }
 
   if (key === 'verification_level') {
@@ -182,23 +232,17 @@ function formatChangeValue(
     }`
   }
 
+  if (key === 'status' && isNumeric(oldValue) && isNumeric(newValue)) {
+    return `${EVENT_STATUS[asNumber(oldValue)] ?? '알 수 없음'} -> ${
+      EVENT_STATUS[asNumber(newValue)] ?? '알 수 없음'
+    }`
+  }
+
   if (key === 'color') {
     return `${formatColor(oldValue)} -> ${formatColor(newValue)}`
   }
 
-  if (
-    key === 'hoist' ||
-    key === 'mentionable' ||
-    key === 'nsfw' ||
-    key === 'temporary' ||
-    key === 'locked' ||
-    key === 'archived' ||
-    key === 'available' ||
-    key === 'enabled' ||
-    key === 'deaf' ||
-    key === 'mute' ||
-    key === 'widget_enabled'
-  ) {
+  if (BOOLEAN_KEYS.has(key)) {
     return `${formatBoolean(oldValue)} -> ${formatBoolean(newValue)}`
   }
 
@@ -211,7 +255,7 @@ function formatChangeValue(
   }
 
   if (key === 'afk_timeout') {
-    return `${asNumber(oldValue)}초 -> ${asNumber(newValue)}초`
+    return `${formatMinutes(oldValue)} -> ${formatMinutes(newValue)}`
   }
 
   if (key === 'max_age') {
@@ -229,30 +273,29 @@ function formatChangeValue(
     return `${formatSlowmode(oldValue)} -> ${formatSlowmode(newValue)}`
   }
 
-  if (
-    key === 'channel_id' ||
-    key === 'afk_channel_id' ||
-    key === 'rules_channel_id' ||
-    key === 'system_channel_id' ||
-    key === 'public_updates_channel_id' ||
-    key === 'safety_alerts_channel_id' ||
-    key === 'widget_channel_id' ||
-    key === 'application_id' ||
-    key === 'inviter_id' ||
-    key === 'owner_id' ||
-    key === 'user_id' ||
-    key === 'guild_id' ||
-    key === 'sound_id' ||
-    key === 'emoji_id'
-  ) {
+  if (CHANNEL_REFERENCE_KEYS.has(key)) {
     return `${formatIdReference(oldValue, guild)} -> ${formatIdReference(
       newValue,
       guild
     )}`
   }
 
-  if (key === 'type') {
-    return `${formatGenericType(oldValue)} -> ${formatGenericType(newValue)}`
+  if (key === 'keyword_filter' || key === 'allow_list') {
+    return `${formatStringList(oldValue)} -> ${formatStringList(newValue)}`
+  }
+
+  if (key === 'exempt_channels') {
+    return `${formatIdReferenceList(
+      oldValue,
+      guild
+    )} -> ${formatIdReferenceList(newValue, guild)}`
+  }
+
+  if (key === 'exempt_roles') {
+    return `${formatIdReferenceList(
+      oldValue,
+      guild
+    )} -> ${formatIdReferenceList(newValue, guild)}`
   }
 
   return `${formatGenericType(oldValue)} -> ${formatGenericType(newValue)}`
@@ -275,49 +318,119 @@ function formatRoleList(value: unknown): string {
   return roles.length === 0 ? '없음' : roles.join(', ')
 }
 
-function formatPermissionBits(value: unknown): string {
-  if (value === null || value === undefined) return '없음'
-  const bits =
-    typeof value === 'string' ? BigInt(value) : BigInt(asNumber(value))
-  if (bits === 0n) return '없음'
+const MAX_PERMISSION_NAMES = 12
 
+/** 이전/이후 전체 목록 대신 실제로 바뀐 권한만 +/−로 보여준다. */
+function formatPermissionDiff(oldValue: unknown, newValue: unknown): string {
+  const oldBits = toPermissionBits(oldValue)
+  const newBits = toPermissionBits(newValue)
+  const added = newBits & ~oldBits
+  const removed = oldBits & ~newBits
+
+  const parts: string[] = []
+  if (added !== 0n) parts.push(`✅ 허용: ${listPermissionNames(added)}`)
+  if (removed !== 0n) parts.push(`⛔ 해제: ${listPermissionNames(removed)}`)
+
+  if (parts.length === 0) return '변경 없음'
+  return parts.join('\n')
+}
+
+function toPermissionBits(value: unknown): bigint {
+  if (value === null || value === undefined) return 0n
+  try {
+    if (typeof value === 'bigint') return value
+    if (typeof value === 'string' || typeof value === 'number') {
+      return BigInt(value)
+    }
+    return 0n
+  } catch {
+    return 0n
+  }
+}
+
+function listPermissionNames(bits: bigint): string {
   const labels: string[] = []
+  const seenBits = new Set<bigint>()
   for (const [name, bit] of Object.entries(PermissionFlagsBits)) {
-    if ((bits & BigInt(bit)) === BigInt(bit)) {
+    const bitValue = BigInt(bit)
+    if (seenBits.has(bitValue)) continue
+    if ((bits & bitValue) === bitValue && bitValue !== 0n) {
+      seenBits.add(bitValue)
       labels.push(translatePermission(name))
     }
   }
 
-  return labels.length === 0
-    ? '없음'
-    : labels.slice(0, 5).join(', ') +
-        (labels.length > 5 ? ` 외 ${labels.length - 5}개` : '')
+  if (labels.length === 0) return '없음'
+  return (
+    labels.slice(0, MAX_PERMISSION_NAMES).join(', ') +
+    (labels.length > MAX_PERMISSION_NAMES
+      ? ` 외 ${labels.length - MAX_PERMISSION_NAMES}개`
+      : '')
+  )
 }
 
 function translatePermission(name: string): string {
   const map: Readonly<Record<string, string>> = {
+    AddReactions: '반응 추가',
     Administrator: '관리자',
-    ManageGuild: '서버 관리',
-    ManageChannels: '채널 관리',
-    ManageRoles: '역할 관리',
-    ManageMessages: '메시지 관리',
-    KickMembers: '킥',
-    BanMembers: '밴',
-    ManageWebhooks: '웹훅 관리',
-    ManageNicknames: '별명 관리',
-    ManageEmojisAndStickers: '이모지/스티커 관리',
-    ViewAudit_log: '감사 로그 보기',
-    ViewChannel: '채널 보기',
-    SendMessages: '메시지 보내기',
-    ReadMessageHistory: '이전 메시지 읽기',
+    AttachFiles: '파일 첨부',
+    BanMembers: '멤버 차단',
+    ChangeNickname: '별명 변경',
     Connect: '음성 참가',
-    Speak: '말하기',
-    MuteMembers: '멤버 음소거',
-    MoveMembers: '멤버 이동',
+    CreateEvents: '이벤트 만들기',
+    CreateGuildExpressions: '표현 요소 만들기',
+    CreateInstantInvite: '초대 만들기',
+    CreatePrivateThreads: '비공개 스레드 만들기',
+    CreatePublicThreads: '공개 스레드 만들기',
+    DeafenMembers: '멤버 청각 차단',
+    EmbedLinks: '링크 첨부',
+    KickMembers: '멤버 추방',
+    ManageChannels: '채널 관리',
+    ManageEmojisAndStickers: '이모지/스티커 관리',
+    ManageEvents: '이벤트 관리',
+    ManageGuild: '서버 관리',
+    ManageGuildExpressions: '표현 요소 관리',
+    ManageMessages: '메시지 관리',
+    ManageNicknames: '별명 관리',
+    ManageRoles: '역할 관리',
     ManageThreads: '스레드 관리',
-    ModerateMembers: '멤버 관리',
+    ManageWebhooks: '웹훅 관리',
+    MentionEveryone: '@everyone 멘션',
+    ModerateMembers: '멤버 타임아웃',
+    MoveMembers: '멤버 이동',
+    MuteMembers: '멤버 음소거',
+    PrioritySpeaker: '우선 발언권',
+    ReadMessageHistory: '이전 메시지 읽기',
+    RequestToSpeak: '발언권 요청',
+    SendMessages: '메시지 보내기',
+    SendMessagesInThreads: '스레드에서 메시지 보내기',
+    SendPolls: '설문 만들기',
+    SendTTSMessages: 'TTS 메시지 보내기',
+    SendVoiceMessages: '음성 메시지 보내기',
+    Speak: '말하기',
+    Stream: '방송하기',
+    UseApplicationCommands: '앱 명령어 사용',
+    UseEmbeddedActivities: '액티비티 사용',
+    UseExternalApps: '외부 앱 사용',
+    UseExternalEmojis: '외부 이모지 사용',
+    UseExternalSounds: '외부 사운드 사용',
+    UseExternalStickers: '외부 스티커 사용',
+    UseSoundboard: '사운드보드 사용',
+    UseVAD: '음성 감지 사용',
+    ViewAuditLog: '감사 로그 보기',
+    ViewChannel: '채널 보기',
+    ViewCreatorMonetizationAnalytics: '수익화 분석 보기',
+    ViewGuildInsights: '서버 인사이트 보기',
   }
   return map[name] ?? name
+}
+
+function formatIsoTimestamp(value: unknown): string {
+  if (value === null || value === undefined) return '해제'
+  if (typeof value !== 'string') return String(value)
+  const ms = Date.parse(value)
+  if (Number.isNaN(ms)) return value
+  return `<t:${Math.floor(ms / 1000)}:F>`
 }
 
 function formatColor(value: unknown): string {
@@ -344,6 +457,13 @@ function formatDuration(value: unknown): string {
   if (seconds === 0) return '무제한'
   if (seconds < 3600) return `${Math.floor(seconds / 60)}분`
   return `${Math.floor(seconds / 3600)}시간`
+}
+
+function formatMinutes(value: unknown): string {
+  const seconds = asNumber(value)
+  if (seconds === 0) return '없음'
+  if (seconds % 60 === 0) return `${seconds / 60}분`
+  return `${seconds}초`
 }
 
 function formatSlowmode(value: unknown): string {
@@ -374,6 +494,26 @@ function formatIdReference(value: unknown, guild: Guild | undefined): string {
   return value
 }
 
+function formatIdReferenceList(
+  value: unknown,
+  guild: Guild | undefined
+): string {
+  if (!Array.isArray(value)) return formatGenericType(value)
+  if (value.length === 0) return '없음'
+  return value
+    .slice(0, 10)
+    .map((item) => formatIdReference(item, guild))
+    .join(', ')
+}
+
+function formatStringList(value: unknown): string {
+  if (!Array.isArray(value)) return formatGenericType(value)
+  if (value.length === 0) return '없음'
+  const items = value.filter((item): item is string => typeof item === 'string')
+  const shown = items.slice(0, 10).join(', ')
+  return items.length > 10 ? `${shown} 외 ${items.length - 10}개` : shown
+}
+
 function formatGenericType(value: unknown): string {
   if (value === null || value === undefined) return '없음'
   if (typeof value === 'string') return value.length === 0 ? '빈 값' : value
@@ -388,6 +528,10 @@ function formatGenericType(value: unknown): string {
     return '객체'
   }
   return String(value)
+}
+
+function isNumeric(value: unknown): boolean {
+  return typeof value === 'number'
 }
 
 function asNumber(value: unknown): number {
