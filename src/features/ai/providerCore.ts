@@ -20,6 +20,8 @@ type RunGenerateInput = {
   readonly options?: GenerateOptions
   // 생각(추론) 노력. 미지정 시 엔드포인트 기본값을 따른다.
   readonly reasoningEffort?: string
+  // 생성 온도. 미지정 시 SDK/엔드포인트 기본값을 그대로 둔다.
+  readonly temperature?: number
   // 컨텍스트 예산(토큰). 시스템 프롬프트·히스토리·응답이 이 안에 들어가도록
   // 히스토리를 최신 우선으로 잘라 넣는다. 미지정 시 히스토리를 전부 포함.
   readonly contextTokens?: number
@@ -164,6 +166,7 @@ export async function runGenerate({
   history,
   options,
   reasoningEffort,
+  temperature,
   contextTokens,
 }: RunGenerateInput): Promise<GenerateResult> {
   const systemPrompt = options?.systemPrompt ?? KOREAN_SYSTEM_PROMPT
@@ -181,7 +184,7 @@ export async function runGenerate({
     'AI',
     `${label} 요청: model=${modelName} tools=[${toolNames}] maxSteps=${maxSteps}${
       reasoningEffort !== undefined ? ` reasoningEffort=${reasoningEffort}` : ''
-    }${
+    }${temperature !== undefined ? ` temperature=${temperature}` : ''}${
       contextTokens !== undefined
         ? ` ctx=${contextTokens} history=${selectedHistory.length}/${
             history?.length ?? 0
@@ -195,6 +198,9 @@ export async function runGenerate({
     system: systemPrompt,
     messages: toModelMessages(prompt, selectedHistory),
     tools: toolsParam as ToolSet | undefined,
+    // 표준 sampling 파라미터. OpenAI-호환 엔드포인트(Ollama 포함)는 본문
+    // temperature로 그대로 받으며, undefined면 본문에서 아예 빠진다.
+    temperature,
     // reasoning_effort 본문 파라미터로 변환되는 SDK 표준 옵션. provider 이름
     // ('opencode-zen') 아래로도 읽히지만, 최상위 표준 키가 경고가 없어 안전하다.
     providerOptions:

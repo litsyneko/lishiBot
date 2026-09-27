@@ -161,6 +161,10 @@ function describeProvider(cfg: AiProviderConfig): string {
 const LOCAL_CONTEXT_TOKENS = 131072 // 128k — 로컬 엔드포인트 기본 컨텍스트 예산
 const CLOUD_CONTEXT_TOKENS = 1048576 // 1m — 클라우드 엔드포인트 기본 컨텍스트 예산
 
+// 로컬 추론 모델(gemma4·qwen 등)은 높은 온도에서 도구 호출 인자와 JSON
+// 형태가 흔들린다. 잡무용 로컬 두뇌에는 낮은 온도가 안정적이므로 0.2로 고정.
+const LOCAL_TEMPERATURE = 0.2
+
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1'])
 
 function isLocalEndpoint(baseUrl?: string): boolean {
@@ -189,6 +193,15 @@ function resolveContextTokens(cfg: AiProviderConfig): number {
   )
 }
 
+// config에 temperature가 있으면 그 값, 없으면 로컬 엔드포인트만 0.2.
+// 클라우드는 undefined를 돌려줘 SDK/엔드포인트 기본값에 맡긴다.
+function resolveTemperature(cfg: AiProviderConfig): number | undefined {
+  return (
+    cfg.temperature ??
+    (isLocalEndpoint(cfg.baseUrl) ? LOCAL_TEMPERATURE : undefined)
+  )
+}
+
 function createProviderAdapter(
   cfg: AiProviderConfig,
   role: 'primary' | 'fallback'
@@ -213,6 +226,7 @@ function createProviderAdapter(
         baseUrl: cfg.baseUrl,
         label: cfg.label ?? cfg.model,
         reasoningEffort: cfg.reasoningEffort,
+        temperature: resolveTemperature(cfg),
         contextTokens: resolveContextTokens(cfg),
         maxAttempts:
           role === 'primary' ? PRIMARY_MAX_ATTEMPTS : FALLBACK_MAX_ATTEMPTS,

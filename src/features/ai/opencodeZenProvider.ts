@@ -16,6 +16,8 @@ export type OpencodeZenConfig = {
   readonly requestTimeoutMs?: number
   // 생각(추론) 노력. 미지정 시 엔드포인트 기본값.
   readonly reasoningEffort?: string
+  // 생성 온도. 미지정 시 SDK/엔드포인트 기본값(로컬은 호출부에서 0.2 지정).
+  readonly temperature?: number
   // 컨텍스트 예산(토큰). 히스토리를 이 안에 맞춰 넣는다.
   readonly contextTokens?: number
 }
@@ -59,6 +61,7 @@ export function createOpencodeZenProvider(
         history,
         options,
         reasoningEffort: config.reasoningEffort,
+        temperature: config.temperature,
         contextTokens: config.contextTokens,
       }),
   }

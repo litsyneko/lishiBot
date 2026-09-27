@@ -24,6 +24,10 @@ export type AiProviderConfig = {
   label?: string
   // openai-compatible 전용: 생각(추론) 노력. 미지정 시 엔드포인트 기본값.
   reasoningEffort?: AiReasoningEffort
+  // openai-compatible 전용: 생성 온도(0~2). 미지정 시 로컬 엔드포인트(Ollama)는
+  // 0.2로 낮춰 도구 호출·구조화된 출력을 안정적으로 만들고, 클라우드는
+  // 엔드포인트 기본값을 따른다.
+  temperature?: number
 }
 
 export type AiConfig = {

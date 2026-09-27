@@ -23,7 +23,8 @@
         "label": "Lisy LLM",
         "apiKey": "local",
         "model": "gemma4:e4b",
-        "baseUrl": "http://localhost:11434/v1"
+        "baseUrl": "http://localhost:11434/v1",
+        "temperature": 0.2
       }
     ],
     "contextTokens": 1048576
