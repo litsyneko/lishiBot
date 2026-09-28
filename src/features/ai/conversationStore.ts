@@ -3,18 +3,17 @@ import type { ChatMessage } from './aiPolicy'
 import type { ToolRecord } from './aiPolicy'
 import { getSupabase } from './supabase'
 
-const SESSION_TTL_MS = 12 * 60 * 60 * 1000
+const SESSION_TTL_MS = 3 * 24 * 60 * 60 * 1000
 // 세션당 대화 저장 상한. 프롬프트에 넣을 때는 providerCore가 컨텍스트 예산(토큰)으로
 // 한 번 더 자르므로, 이 값은 저장 상한이자 예산이 담을 수 있는 최대치의 안전망이다.
 const MAX_HISTORY_PER_SESSION = 200
 const MAX_TOOL_HISTORY = 100
 const MAX_TOOL_HISTORY_PROMPT_RECORDS = 8
 const MAX_TOOL_HISTORY_FIELD_LENGTH = 240
-const ORPHAN_SESSION_TTL_MS = 24 * 60 * 60 * 1000
+const ORPHAN_SESSION_TTL_MS = SESSION_TTL_MS
 
 const SESSIONS_TABLE = 'ai_sessions'
 const MESSAGES_TABLE = 'ai_session_messages'
-const KST_TZ = 'Asia/Seoul'
 // 부팅 시 프리로드할 세션 범위 (idle TTL 안쪽 세션만 캐시로 복원)
 const PRELOAD_WINDOW_MS = SESSION_TTL_MS
 let metadataColumnUnavailable = false
@@ -51,12 +50,13 @@ function restoreImageUrls(value: unknown): string[] {
 export type Session = {
   history: ChatMessage[]
   toolHistory: ToolRecord[]
-  startedAt: number // daily 롤오버 기준 (KST 날짜 비교)
+  startedAt: number // 대화 시작 시각
   lastActivity: number // idle 만료 기준
   messageIds: Set<string>
   guildId: string
   channelId: string
-  userId: string
+  userId: string // 대화를 시작한 사용자
+  participantIds: Set<string>
 }
 
 const sessions = new Map<string, Session>()
@@ -243,11 +243,6 @@ async function deleteSessionFromDb(sessionKey: string): Promise<void> {
   }
 }
 
-// KST(Asia/Seoul) 기준 날짜 문자열(YYYY-MM-DD). daily 롤오버 판정용.
-function kstDateString(ms: number): string {
-  return new Date(ms).toLocaleDateString('en-CA', { timeZone: KST_TZ })
-}
-
 function isExpired(session: Session, now: number = Date.now()): boolean {
   return now - session.lastActivity > SESSION_TTL_MS
 }
@@ -292,12 +287,7 @@ function getOrCreateSession(
   const now = Date.now()
   const existing = sessions.get(sessionKey)
   if (existing !== undefined) {
-    const rolledOver = kstDateString(existing.startedAt) !== kstDateString(now)
     if (isExpired(existing, now) || isOrphaned(existing, now)) {
-      deleteSession(sessionKey)
-    } else if (rolledOver) {
-      // KST 날짜가 넘어가면 이어지는 스레드가 있어도 새 세션으로 롤오버한다.
-      // 자정을 넘기면 새 대화로 보는 게 자연스럽다(직전 요약 물림은 이후 summary 단계에서 보완).
       deleteSession(sessionKey)
     } else {
       existing.lastActivity = now
@@ -314,6 +304,7 @@ function getOrCreateSession(
     guildId,
     channelId,
     userId,
+    participantIds: new Set([userId]),
   }
   sessions.set(sessionKey, created)
   enqueue(sessionKey, () => persistSessionMeta(created, sessionKey))
@@ -344,10 +335,8 @@ function reviveSession(sessionKey: string): void {
   enqueue(sessionKey, () => touchSessionMeta(session, sessionKey))
 }
 
-// 답장으로 이어가려는 추적 세션을 롤오버 규율에 맞춰 되살린다.
-// 같은 KST 날짜면 revive 후 sessionKey를 반환한다.
-// 자정(KST)을 넘겼으면 세션을 폐기하고 undefined를 반환한다
-// → 호출자가 getOrCreateSession으로 새 대화를 시작한다(getOrCreateSession 롤오버 경로와 동일 규율).
+// 답장으로 추적한 대화를 3일 활동 기한 안에서 이어간다.
+// 다른 사용자의 답장도 같은 세션에 참여시키고, 만료됐으면 이어가지 않는다.
 function continueSession(
   referencedMessageId: string,
   guildId: string,
@@ -358,17 +347,15 @@ function continueSession(
   if (
     traced === undefined ||
     traced.session.guildId !== guildId ||
-    traced.session.channelId !== channelId ||
-    traced.session.userId !== userId
+    traced.session.channelId !== channelId
   ) {
     return undefined
   }
-  const rolledOver =
-    kstDateString(traced.session.startedAt) !== kstDateString(Date.now())
-  if (rolledOver || isExpired(traced.session)) {
+  if (isExpired(traced.session)) {
     deleteSession(traced.sessionKey)
     return undefined
   }
+  traced.session.participantIds.add(userId)
   reviveSession(traced.sessionKey)
   return traced.sessionKey
 }
@@ -384,6 +371,9 @@ function appendToSession(
   }
   const trimmed = [...session.history, message].slice(-MAX_HISTORY_PER_SESSION)
   session.history = trimmed
+  if (message.role === 'user' && message.authorId !== undefined) {
+    session.participantIds.add(message.authorId)
+  }
   session.lastActivity = Date.now()
   if (message.role === 'assistant' && discordMessageId !== undefined) {
     bindMessage(sessionKey, session, discordMessageId)
@@ -569,6 +559,13 @@ async function loadAiSessions(): Promise<void> {
         guildId: row.guild_id,
         channelId: row.channel_id,
         userId: row.user_id,
+        participantIds: new Set([
+          row.user_id,
+          ...history
+            .filter((message) => message.role === 'user')
+            .map((message) => message.authorId)
+            .filter((id): id is string => id !== undefined),
+        ]),
       })
       loadedCount += 1
     }
@@ -604,10 +601,7 @@ function getUserSessionInfo(
   const sessionKey = `${guildId}:${channelId}:${userId}`
   const session = sessions.get(sessionKey)
   if (session === undefined) return undefined
-  if (
-    isExpired(session) ||
-    kstDateString(session.startedAt) !== kstDateString(Date.now())
-  ) {
+  if (isExpired(session)) {
     deleteSession(sessionKey)
     return undefined
   }
@@ -654,6 +648,7 @@ async function clearSessionsForChannel(
 
 export {
   SESSION_TTL_MS,
+  isExpired,
   MAX_HISTORY_PER_SESSION,
   loadAiSessions,
   getOrCreateSession,

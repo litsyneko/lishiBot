@@ -28,6 +28,7 @@ import {
 } from '../features/ai/approvalGate'
 import { getCommandCatalog } from '../features/ai/commandCatalog'
 import {
+  SESSION_TTL_MS,
   appendToSession,
   appendToToolHistory,
   clearSessionsForChannel,
@@ -36,6 +37,7 @@ import {
   getOrCreateSession,
   getSessionByMessage,
   getUserSessionInfo,
+  isExpired,
   loadAiSessions,
 } from '../features/ai/conversationStore'
 import { detectMentionPrompt } from '../features/ai/mentionAi'
@@ -387,14 +389,45 @@ class AiMentionExtensionClass extends Extension {
     const referencedMessage = reference?.messageId ?? undefined
 
     if (referencedMessage !== undefined) {
+      const referenced = await message.channel.messages
+        .fetch(referencedMessage)
+        .catch(() => undefined)
+      if (
+        referenced?.author.id === botId &&
+        Date.now() - referenced.createdTimestamp >= SESSION_TTL_MS
+      ) {
+        await message.reply(
+          '이 답장은 3일이 지난 OLD 메시지예요. 저를 새로 멘션해 대화를 시작해 주세요.'
+        )
+        return
+      }
       const traced = getSessionByMessage(referencedMessage)
       if (
+        referenced?.author.id === botId &&
         traced !== undefined &&
         traced.session.guildId === (message.guild?.id ?? '') &&
-        traced.session.channelId === message.channel.id &&
-        traced.session.userId === message.author.id
+        traced.session.channelId === message.channel.id
       ) {
-        await this.handleReplyToBotMessage(message, referencedMessage)
+        if (isExpired(traced.session)) {
+          await message.reply(
+            '이 대화는 마지막 활동 후 3일이 지나 OLD 상태예요. 저를 새로 멘션해 주세요.'
+          )
+          return
+        }
+        await this.handleReplyToBotMessage(
+          message,
+          referencedMessage,
+          referenced
+        )
+        return
+      }
+      if (
+        referenced?.author.id === botId &&
+        detectMentionPrompt(botId, message.content) === undefined
+      ) {
+        await message.reply(
+          '이 답장의 대화 기록을 찾지 못했어요. 저를 멘션해 새 대화를 시작해 주세요.'
+        )
         return
       }
     }
@@ -635,7 +668,8 @@ class AiMentionExtensionClass extends Extension {
 
   private async handleReplyToBotMessage(
     message: Message,
-    referencedMessageId: string
+    referencedMessageId: string,
+    referencedMessage?: Message
   ): Promise<void> {
     if (this.provider === undefined) {
       return
@@ -644,9 +678,9 @@ class AiMentionExtensionClass extends Extension {
     let thinkingMessageId: string | undefined
 
     try {
-      const referenced = await message.channel.messages.fetch(
-        referencedMessageId
-      )
+      const referenced =
+        referencedMessage ??
+        (await message.channel.messages.fetch(referencedMessageId))
       if (referenced.author.id !== this.client.user?.id) {
         return
       }
@@ -655,7 +689,7 @@ class AiMentionExtensionClass extends Extension {
         traced === undefined ||
         traced.session.guildId !== (message.guild?.id ?? '') ||
         traced.session.channelId !== message.channel.id ||
-        traced.session.userId !== message.author.id
+        isExpired(traced.session)
       ) {
         return
       }
@@ -1441,7 +1475,8 @@ class AiMentionExtensionClass extends Extension {
       [
         '🤖 **AI 대화 안내**',
         '- 메시지 맨 앞에 봇을 멘션하고 질문해 주세요. 이미지를 함께 첨부할 수도 있어요.',
-        '- AI 답장에 답장하면 같은 대화를 이어갑니다. 답장 대화는 시작한 사용자만 이어갈 수 있어요.',
+        '- 멘션으로 시작한 대화는 요청자별로 관리해요. 다른 사용자도 AI 답장에 답장하면 참여할 수 있어요.',
+        '- 마지막 활동 후 3일이 지나면 OLD 대화가 되어 이어갈 수 없어요.',
         '- `/에이전트 내세션`으로 이 채널의 대화 상태를 확인할 수 있어요.',
         '- `/에이전트 내세션초기화`로 이 채널의 내 대화만 지울 수 있어요.',
         '- `/에이전트 셋업`과 `/에이전트 상태`는 서버 관리자용이에요.',
