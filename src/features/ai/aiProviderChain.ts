@@ -1,5 +1,6 @@
 import { logger } from '../../utils/logger'
 import type { ProviderAdapter, StreamResult } from './aiPolicy'
+import { ToolExecutionInterruptedError } from './providerErrors'
 
 export type AiProviderChainConfig = {
   readonly fallbacks?: readonly ProviderAdapter[] | undefined
@@ -15,6 +16,9 @@ export function createAiProviderChain(
       try {
         return await config.primary.generate(prompt, history, options)
       } catch (primaryError) {
+        if (primaryError instanceof ToolExecutionInterruptedError) {
+          return interruptedResult(primaryError)
+        }
         const reason = describe(primaryError)
 
         if (config.fallbacks === undefined || config.fallbacks.length === 0) {
@@ -30,6 +34,9 @@ export function createAiProviderChain(
           try {
             return await fallback.generate(prompt, history, options)
           } catch (fallbackError) {
+            if (fallbackError instanceof ToolExecutionInterruptedError) {
+              return interruptedResult(fallbackError)
+            }
             lastError = fallbackError
             logger.warn(
               'AI',
@@ -54,6 +61,9 @@ export function createAiProviderChain(
       try {
         return await config.primary.stream(prompt, history, options, handlers)
       } catch (primaryError) {
+        if (primaryError instanceof ToolExecutionInterruptedError) {
+          return interruptedResult(primaryError)
+        }
         const reason = describe(primaryError)
 
         if (config.fallbacks === undefined || config.fallbacks.length === 0) {
@@ -74,6 +84,9 @@ export function createAiProviderChain(
             handlers.onProviderSwitch?.(label)
             return await fallback.stream(prompt, history, options, handlers)
           } catch (fallbackError) {
+            if (fallbackError instanceof ToolExecutionInterruptedError) {
+              return interruptedResult(fallbackError)
+            }
             lastError = fallbackError
             logger.warn(
               'AI',
@@ -108,6 +121,15 @@ function dryRunResult(): StreamResult {
   return {
     text: '미안해요, 지금 AI 서버 상태가 좋지 않아서 대답하기 어려워요. 잠시 후에 다시 말 걸어주실 수 있을까요?',
     toolRecords: [],
+    reasoning: '',
+  }
+}
+
+function interruptedResult(error: ToolExecutionInterruptedError): StreamResult {
+  logger.warn('AI', `도구 호출 후 요청 중단(${error.message}) — 중복 실행 방지`)
+  return {
+    text: '도구 호출 중 응답이 끊겼어요. 같은 작업을 다시 실행하기 전에 결과를 확인해 주세요.',
+    toolRecords: error.toolRecords,
     reasoning: '',
   }
 }

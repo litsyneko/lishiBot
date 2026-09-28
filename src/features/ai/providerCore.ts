@@ -9,6 +9,7 @@ import type {
   ToolRecord,
 } from './aiPolicy'
 import { assertOutputSafe } from './outputGuard'
+import { ToolExecutionInterruptedError } from './providerErrors'
 import { KOREAN_SYSTEM_PROMPT } from './systemPrompt'
 import {
   type LanguageModel,
@@ -164,10 +165,10 @@ function estimateTokens(text: string): number {
 /** 예산 안에 들어가는 가장 긴 최신 히스토리 접미사를 고른다. */
 function selectHistoryWithinBudget(
   history: readonly ChatMessage[],
-  systemPrompt: string,
+  reservedTokens: number,
   contextTokens: number
 ): readonly ChatMessage[] {
-  const budget = Math.floor(contextTokens * 0.7) - estimateTokens(systemPrompt)
+  const budget = Math.floor(contextTokens * 0.7) - reservedTokens
   if (budget <= 0) return []
 
   let used = 0
@@ -206,12 +207,30 @@ function resolveCoreRequest(
   const systemPrompt = input.options?.systemPrompt ?? KOREAN_SYSTEM_PROMPT
   const maxSteps = input.options?.maxSteps ?? 20
 
+  const toolCost =
+    input.options?.tools?.reduce(
+      (total, tool) =>
+        total +
+        estimateTokens(
+          JSON.stringify({
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.parameters,
+          })
+        ),
+      0
+    ) ?? 0
+  const reservedTokens =
+    estimateTokens(systemPrompt) +
+    estimateTokens(input.prompt) +
+    toolCost +
+    (input.options?.imageUrls?.length ?? 0) * 1500
   const selectedHistory =
     input.contextTokens === undefined
       ? input.history ?? []
       : selectHistoryWithinBudget(
           input.history ?? [],
-          systemPrompt,
+          reservedTokens,
           input.contextTokens
         )
 
@@ -306,17 +325,30 @@ export async function runGenerate({
     }
   )
 
-  const result = await generateText({ model, ...request })
+  let result
+  try {
+    result = await generateText({ model, ...request })
+  } catch (error) {
+    if (observedToolRecords.length > 0) {
+      throw new ToolExecutionInterruptedError(error, observedToolRecords)
+    }
+    throw error
+  }
 
   const text = result.text ?? ''
-
-  // reject rather than strip — partially-corrupted output must activate provider-chain fallback
-  assertOutputSafe(text)
-
   const toolRecords =
     observedToolRecords.length > 0
       ? observedToolRecords
       : (result.steps ?? []).flatMap((step) => extractToolRecords(step))
+
+  try {
+    assertOutputSafe(text)
+  } catch (error) {
+    if (toolRecords.length > 0) {
+      throw new ToolExecutionInterruptedError(error, toolRecords)
+    }
+    throw error
+  }
 
   logger.info(
     'AI',
@@ -324,6 +356,26 @@ export async function runGenerate({
   )
 
   return { text, toolRecords }
+}
+
+/** 스트리밍 기능 자체를 지원하지 않을 때만 비스트리밍으로 재시도한다. */
+function isStreamingUnsupported(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  const status = (error as Error & { statusCode?: number }).statusCode
+  if (
+    status !== undefined &&
+    status !== 400 &&
+    status !== 422 &&
+    status !== 501
+  ) {
+    return false
+  }
+  return (
+    /stream(?:ing)?|스트리밍/iu.test(error.message) &&
+    /unsupported|not supported|not implemented|미지원|지원하지/iu.test(
+      error.message
+    )
+  )
 }
 
 /**
@@ -376,9 +428,14 @@ export async function runStream(
     streamError = iterationError
   }
 
-  // 아직 아무것도 노출하지 않았고 도구도 실행하지 않았다면, 스트리밍 미지원
-  // provider로 간주하고 기존 generate 경로로 되돌린다(사용자 화면에는 변화 없음).
-  if (streamError !== undefined && !isExposed && !isToolUsed) {
+  // 스트리밍 미지원이 명확할 때만 generate로 강등한다. 할당량 부족·인증
+  // 실패·HTTP 오류는 같은 요청을 반복해도 해결되지 않으므로 체인으로 넘긴다.
+  if (
+    streamError !== undefined &&
+    !isExposed &&
+    !isToolUsed &&
+    isStreamingUnsupported(streamError)
+  ) {
     logger.warn(
       'AI',
       `${input.label} 스트리밍 실패(${describeError(
@@ -390,16 +447,23 @@ export async function runStream(
   }
 
   if (streamError !== undefined) {
-    // 이미 노출된 내용이 있으므로 숨길 수 없다. 체인이 onProviderSwitch로
-    // 다음 provider를 알리고 호출부가 노출 내용을 초기화하도록 던진다.
+    if (isToolUsed || observedToolRecords.length > 0) {
+      throw new ToolExecutionInterruptedError(streamError, observedToolRecords)
+    }
     throw streamError
   }
 
-  const text = await result.text
-
-  // 전체가 다 나온 뒤에야 가드를 건다. 손상 출력은 스트리밍 여부와 무관하게
-  // runGenerate와 똑같이 폴백을 발동시킨다.
-  assertOutputSafe(text)
+  let text: string
+  try {
+    text = await result.text
+    // 전체가 다 나온 뒤에야 가드를 건다.
+    assertOutputSafe(text)
+  } catch (error) {
+    if (isToolUsed || observedToolRecords.length > 0) {
+      throw new ToolExecutionInterruptedError(error, observedToolRecords)
+    }
+    throw error
+  }
 
   const toolRecords =
     observedToolRecords.length > 0
