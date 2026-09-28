@@ -55,6 +55,7 @@ export type MessageReply =
 
 export type MessageCreateContext = {
   readonly ai: MessageCreateAiConfig
+  readonly approvalPending?: () => boolean
   readonly editStage?: (stage: AiStage) => void
   readonly message: MessageCreateInput
   readonly reply: (reply: MessageReply) => void
@@ -268,8 +269,12 @@ export async function handleMessageCreate(
             existingHistory,
             generateOptions,
             {
-              onReasoning: stream.appendReasoning,
-              onText: stream.appendText,
+              onReasoning: (delta) => {
+                if (!context.approvalPending?.()) stream.appendReasoning(delta)
+              },
+              onText: (delta) => {
+                if (!context.approvalPending?.()) stream.appendText(delta)
+              },
               onToolCall: stream.noteToolCall,
               onProviderSwitch: stream.noteProviderSwitch,
             }
@@ -291,9 +296,12 @@ export async function handleMessageCreate(
       // 스트리밍 실패 후 generate로 되돌렸다면 reasoning은 없다. 하지만
       // 화면에는 이미 반쯤 노출됐을 수 있으므로 renderer에 그대로 최종
       // 편집을 맡겨 이중 전송을 막는다.
-      const cleaned = stripToolCallSyntax(stripThinkTags(response.text))
+      const approvalPending = context.approvalPending?.() ?? false
+      const cleaned = approvalPending
+        ? '요청하신 작업은 승인 대기 중이에요. 승인 카드가 표시되면 버튼으로 결정해 주세요.'
+        : stripToolCallSyntax(stripThinkTags(response.text))
       const usedTools =
-        response.toolRecords.length > 0
+        !approvalPending && response.toolRecords.length > 0
           ? `\n\n> 사용: ${response.toolRecords.map((r) => r.name).join(', ')}`
           : ''
       const finalText =
@@ -337,9 +345,12 @@ export async function handleMessageCreate(
 
     const [response] = await Promise.all([aiPromise, thinkPromise])
 
-    const cleaned = stripToolCallSyntax(stripThinkTags(response.text))
+    const approvalPending = context.approvalPending?.() ?? false
+    const cleaned = approvalPending
+      ? '요청하신 작업은 승인 대기 중이에요. 승인 카드가 표시되면 버튼으로 결정해 주세요.'
+      : stripToolCallSyntax(stripThinkTags(response.text))
     const usedTools =
-      response.toolRecords.length > 0
+      !approvalPending && response.toolRecords.length > 0
         ? `\n\n> 사용: ${response.toolRecords.map((r) => r.name).join(', ')}`
         : ''
     const finalText =

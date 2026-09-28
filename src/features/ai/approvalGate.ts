@@ -1,4 +1,3 @@
-import { toolNameMap } from './tools/proposalCard'
 import type {
   ToolDefinition,
   ToolExecutionContext,
@@ -21,7 +20,7 @@ export type ApprovalProposal = {
 export const APPROVAL_TTL_MS = 5 * 60 * 1000
 
 export type ProposalCollector = {
-  // 실행 대신 제안을 기록하고, 모델에게 돌려줄 보류 안내를 반환한다.
+  // 실행 대신 제안을 기록하고, 모델에는 승인 대기 상태만 반환한다.
   readonly propose: (
     toolDef: ToolDefinition,
     args: Record<string, unknown>,
@@ -29,10 +28,11 @@ export type ProposalCollector = {
   ) => ToolResult
   // 수집된 제안을 꺼내고 비운다. generate 종료 후 승인 카드 전송 시 호출.
   readonly drain: () => ApprovalProposal[]
+  readonly hasPending: () => boolean
 }
 
 // generate 1회 단위로 만들어 execute 래퍼에 물린다.
-// 같은 (도구, 인자) 재호출은 중복 제안 없이 같은 안내만 반환한다.
+// 같은 (도구, 인자) 재호출은 중복 제안 없이 같은 상태만 반환한다.
 export function createProposalCollector(): ProposalCollector {
   const drafts = new Map<string, ApprovalProposal>()
 
@@ -50,11 +50,14 @@ export function createProposalCollector(): ProposalCollector {
           createdAt: Date.now(),
         })
       }
-      const displayName = toolNameMap[toolName] ?? toolName
       return {
         success: true,
-        message: `'${displayName}' 작업은 위험 작업이라 바로 실행하지 않고 보류했어요. 사용자에게 승인 카드가 전송됩니다. 이 작업을 다시 시도하지 말고, 사용자에게 승인 카드의 [실행 승인] 버튼으로 결정해 달라고 안내하세요.`,
+        message: 'approval_required',
+        data: { status: 'approval_required' },
       }
+    },
+    hasPending() {
+      return drafts.size > 0
     },
     drain() {
       const list = [...drafts.values()]

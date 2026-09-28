@@ -407,6 +407,7 @@ class AiMentionExtensionClass extends Extension {
     const commandCatalog = await getCommandCatalog(message.guild)
 
     const result = await handleMessageCreate({
+      approvalPending: () => collector.hasPending(),
       ai: {
         botId,
         provider: this.provider,
@@ -703,6 +704,7 @@ class AiMentionExtensionClass extends Extension {
       })
 
       const result = await handleSessionReply({
+        approvalPending: () => collector.hasPending(),
         guildId: message.guild?.id ?? '',
         userId: message.author.id,
         referencedMessageId,
@@ -838,6 +840,21 @@ class AiMentionExtensionClass extends Extension {
             err instanceof Error ? err.message : String(err)
           }`
         )
+        try {
+          await send({
+            content:
+              '승인 카드를 보내지 못해 작업을 실행하지 않았어요. 잠시 후 다시 요청해 주세요.',
+          })
+        } catch (noticeError) {
+          logger.error(
+            'AI',
+            `승인 카드 실패 안내 전송 실패: ${
+              noticeError instanceof Error
+                ? noticeError.message
+                : String(noticeError)
+            }`
+          )
+        }
       }
     }
   }

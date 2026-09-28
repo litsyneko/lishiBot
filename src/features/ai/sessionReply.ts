@@ -21,6 +21,7 @@ import { stripThinkTags, stripToolCallSyntax } from './thinkStripper'
 const FOOTER_HINT = '---\n\n-# 이 메시지에 답장하면 대화를 이어갈 수 있어요.'
 
 export type SessionReplyInput = {
+  readonly approvalPending?: () => boolean
   readonly guildId: string
   readonly userId: string
   readonly referencedMessageId: string
@@ -180,8 +181,12 @@ export async function handleSessionReply(
   } else {
     try {
       result = await provider.stream(contextMessage, history, generateOptions, {
-        onReasoning: stream.appendReasoning,
-        onText: stream.appendText,
+        onReasoning: (delta) => {
+          if (!input.approvalPending?.()) stream.appendReasoning(delta)
+        },
+        onText: (delta) => {
+          if (!input.approvalPending?.()) stream.appendText(delta)
+        },
         onToolCall: stream.noteToolCall,
         onProviderSwitch: stream.noteProviderSwitch,
       })
@@ -200,10 +205,13 @@ export async function handleSessionReply(
     }
   }
 
-  const cleaned = stripToolCallSyntax(stripThinkTags(result.text))
+  const approvalPending = input.approvalPending?.() ?? false
+  const cleaned = approvalPending
+    ? '요청하신 작업은 승인 대기 중이에요. 승인 카드가 표시되면 버튼으로 결정해 주세요.'
+    : stripToolCallSyntax(stripThinkTags(result.text))
 
   const usedTools =
-    result.toolRecords.length > 0
+    !approvalPending && result.toolRecords.length > 0
       ? `\n\n> 사용: ${result.toolRecords.map((r) => r.name).join(', ')}`
       : ''
   const response =
