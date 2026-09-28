@@ -37,6 +37,7 @@ const MESSAGE_LENGTH_LIMIT = 2000
 type MessageLike = {
   readonly id: string
   readonly edit: (content: string) => Promise<unknown>
+  readonly delete?: () => Promise<unknown>
 }
 
 export type StreamMessageHost = {
@@ -207,9 +208,9 @@ export function createStreamRenderer(
 
   // 편집 실패는 삼킨다. 429면 백오프 후 한 번 더 시도하고, 메시지가
   // 사라졌으면 편집 자체를 포기한다(플래그만 남기고 조용히 종료).
-  async function pushOnce(content: string): Promise<void> {
+  async function pushOnce(content: string): Promise<boolean> {
     if (messageGone) {
-      return
+      return false
     }
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -220,12 +221,12 @@ export function createStreamRenderer(
           await message.edit(content)
         }
         notifyFirstContent()
-        return
+        return true
       } catch (error) {
         if (isMessageGone(error)) {
           messageGone = true
           logger.debug('AI', '스트리밍 메시지가 사라져 편집을 중단합니다')
-          return
+          return false
         }
         if (isRateLimited(error) && attempt === 0) {
           logger.debug('AI', '스트리밍 편집이 rate limit에 막혀 재시도합니다')
@@ -238,14 +239,16 @@ export function createStreamRenderer(
             error instanceof Error ? error.message : String(error)
           }`
         )
-        return
+        return false
       }
     }
+    return false
   }
 
-  function push(content: string): Promise<void> {
-    editChain = editChain.then(() => pushOnce(content))
-    return editChain
+  function push(content: string): Promise<boolean> {
+    const operation = editChain.then(() => pushOnce(content))
+    editChain = operation.then(() => undefined)
+    return operation
   }
 
   function clearTrailingEdit(): void {
@@ -359,10 +362,20 @@ export function createStreamRenderer(
       // 최소간격 미달이어도 이 1회는 반드시 나간다.
       await editChain
       startTyping()
-      await push(render())
+      const finalEditSucceeded = await push(render())
       stopTyping()
 
-      if (messageGone) {
+      if (!finalEditSucceeded) {
+        try {
+          await message?.delete?.()
+        } catch (error) {
+          logger.warn(
+            'AI',
+            `완료 편집 실패 후 진행 메시지 삭제 실패: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          )
+        }
         return undefined
       }
       return message?.id

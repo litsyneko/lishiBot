@@ -526,10 +526,12 @@ class AiMentionExtensionClass extends Extension {
             hooks.onFirstContent()
             if (stageMessageId !== undefined) {
               const staleId = stageMessageId
-              stageMessageId = undefined
-              void message.channel.messages
-                .delete(staleId)
-                .catch(() => undefined)
+              void message.channel.messages.delete(staleId).then(
+                () => {
+                  if (stageMessageId === staleId) stageMessageId = undefined
+                },
+                () => undefined
+              )
             }
           },
           host: {
@@ -545,6 +547,7 @@ class AiMentionExtensionClass extends Extension {
                   })
                 },
                 id: sent.id,
+                delete: () => message.channel.messages.delete(sent.id),
               }
             },
             setTyping: () => {
@@ -594,6 +597,12 @@ class AiMentionExtensionClass extends Extension {
     })
 
     await replyComplete
+    if (stageMessageId !== undefined) {
+      await message.channel.messages
+        .delete(stageMessageId)
+        .catch(() => undefined)
+      stageMessageId = undefined
+    }
 
     // 스트리밍 경로에서는 답장이 이미 화면에 있으므로 reply()로 다시 보내지
     // 않는다. 세션 바인딩만 그 메시지 id에 묶는다.
@@ -758,6 +767,7 @@ class AiMentionExtensionClass extends Extension {
                 })
               },
               id: sent.id,
+              delete: () => message.channel.messages.delete(sent.id),
             }
           },
           setTyping: () => {
