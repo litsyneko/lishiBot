@@ -1,5 +1,5 @@
 import type { ProviderAdapter } from './aiPolicy'
-import { runGenerate } from './providerCore'
+import { runGenerate, runStream } from './providerCore'
 import { createAnthropic } from '@ai-sdk/anthropic'
 
 export type AnthropicConfig = {
@@ -20,6 +20,7 @@ export function createAnthropicProvider(
   const model = anthropic(config.model)
 
   return {
+    label: 'Anthropic',
     generate: async (prompt, history, options) =>
       runGenerate({
         model,
@@ -30,5 +31,20 @@ export function createAnthropicProvider(
         options,
         contextTokens: config.contextTokens,
       }),
+    // 스트리밍 미지원 환경에서의 안전망은 runStream 내부에 있다 — 노출된
+    // 토큰이 없으면 generate로 조용히 강등된다.
+    stream: async (prompt, history, options, handlers) =>
+      runStream(
+        {
+          model,
+          modelName: config.model,
+          label: 'Anthropic',
+          prompt,
+          history,
+          options,
+          contextTokens: config.contextTokens,
+        },
+        handlers
+      ),
   }
 }

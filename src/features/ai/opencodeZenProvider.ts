@@ -1,5 +1,5 @@
 import type { ProviderAdapter } from './aiPolicy'
-import { runGenerate } from './providerCore'
+import { runGenerate, runStream } from './providerCore'
 import { createResilientFetch } from './resilientFetch'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 
@@ -52,6 +52,7 @@ export function createOpencodeZenProvider(
   const model = provider(config.model)
 
   return {
+    label,
     generate: async (prompt, history, options) =>
       runGenerate({
         model,
@@ -64,5 +65,22 @@ export function createOpencodeZenProvider(
         temperature: config.temperature,
         contextTokens: config.contextTokens,
       }),
+    // 스트리밍 미지원 환경(로컬 모델의 tool-call 루프 충돌 등)에서의 안전망은
+    // runStream 내부에 있다 — 노출된 토큰이 없으면 generate로 조용히 강등된다.
+    stream: async (prompt, history, options, handlers) =>
+      runStream(
+        {
+          model,
+          modelName: config.model,
+          label,
+          prompt,
+          history,
+          options,
+          reasoningEffort: config.reasoningEffort,
+          temperature: config.temperature,
+          contextTokens: config.contextTokens,
+        },
+        handlers
+      ),
   }
 }

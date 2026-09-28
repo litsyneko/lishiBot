@@ -2,6 +2,12 @@ import { logger } from '../../utils/logger'
 import { SeparatorBuilder, TextDisplayBuilder } from '@discordjs/builders'
 import { MessageFlags, SeparatorSpacingSize } from 'discord.js'
 
+// 실측 사실: Ollama은 <think> 태그를 전혀 쓰지 않는다. OpenAI-호환 엔드포인트
+// (/v1/chat/completions)로는 thinking이 content가 아니라 별도 reasoning 필드로
+// 오고, 네이티브 /api/chat 에서는 thinking 필드다. 따라서 이 함수는
+// Ollama 경유 시 완전 무동작이다 — 스트리밍은 providerCore이 reasoning 델타를
+// 따로 흘려보내므로(→ streamRenderer의 인용줄) 여기까지 오지 않는다.
+// 이 함수는 태그를 씌우는 클라우드 provider 대비용으로 코드를 남긴다.
 const THINK_PATTERN = /<think>[\s\S]*?<\/think>/gi
 
 export function stripThinkTags(content: string): string {

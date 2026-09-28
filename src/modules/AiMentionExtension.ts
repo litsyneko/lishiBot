@@ -37,6 +37,7 @@ import {
   getOrCreateSession,
   loadAiSessions,
 } from '../features/ai/conversationStore'
+import { getMessageImageUrls } from '../features/ai/messageImages'
 import {
   dismissOnboarding,
   shouldShowOnboarding,
@@ -58,6 +59,7 @@ import {
   upsertServerProfile,
 } from '../features/ai/serverProfile'
 import { handleSessionReply } from '../features/ai/sessionReply'
+import { createStreamRenderer } from '../features/ai/streamRenderer'
 import { stripThinkTags, toComponentV2 } from '../features/ai/thinkStripper'
 import { roleAssignmentIsSensitive } from '../features/ai/tools/helpers/roleRisk'
 import { delayBeforeToolCall } from '../features/ai/tools/helpers/toolDelay'
@@ -411,6 +413,7 @@ class AiMentionExtensionClass extends Extension {
       message: {
         authorBot: message.author.bot,
         content: message.content,
+        imageUrls: getMessageImageUrls(message),
         guildId,
         userId,
         hasManageGuild,
@@ -453,6 +456,45 @@ class AiMentionExtensionClass extends Extension {
           void channel.sendTyping()
         }
       },
+      openStream: (hooks) =>
+        createStreamRenderer({
+          onFirstContent: () => {
+            // 스트리밍이 화면을 장악하면 단계 메시지는 불필요해진다.
+            hooks.onFirstContent()
+            if (stageMessageId !== undefined) {
+              const staleId = stageMessageId
+              stageMessageId = undefined
+              void message.channel.messages
+                .delete(staleId)
+                .catch(() => undefined)
+            }
+          },
+          host: {
+            send: async (content) => {
+              const v2 = toComponentV2(content)
+              const sent = await message.reply({ content: '', ...v2 })
+              return {
+                edit: async (next) => {
+                  const editV2 = toComponentV2(next)
+                  await message.channel.messages.edit(sent.id, {
+                    content: '',
+                    ...editV2,
+                  })
+                },
+                id: sent.id,
+              }
+            },
+            setTyping: () => {
+              const channel = message.channel
+              if (
+                'sendTyping' in channel &&
+                typeof channel.sendTyping === 'function'
+              ) {
+                void channel.sendTyping()
+              }
+            },
+          },
+        }),
       reply: (reply) => {
         replyComplete = (async () => {
           if (reply.type === 'embed') {
@@ -489,6 +531,14 @@ class AiMentionExtensionClass extends Extension {
     })
 
     await replyComplete
+
+    // 스트리밍 경로에서는 답장이 이미 화면에 있으므로 reply()로 다시 보내지
+    // 않는다. 세션 바인딩만 그 메시지 id에 묶는다.
+    const streamedMessageId = result.streamedMessageId
+    if (streamedMessageId !== undefined && botMessageId === undefined) {
+      botMessageId = streamedMessageId
+      lastBotResponse = result.aiText
+    }
 
     if (result.toolRecords !== undefined && result.toolRecords.length > 0) {
       const sessionKey = getOrCreateSession(guildId, message.channel.id, userId)
@@ -568,7 +618,8 @@ class AiMentionExtensionClass extends Extension {
         false
 
       const userMessage = message.content.replace(/<@!?\d+>/u, '').trim()
-      if (userMessage.length === 0) {
+      const imageUrls = getMessageImageUrls(message)
+      if (userMessage.length === 0 && imageUrls.length === 0) {
         return
       }
 
@@ -601,13 +652,46 @@ class AiMentionExtensionClass extends Extension {
         collector
       )
 
+      // 스트리밍은 이미 보낸 "답장 생각 중" 메시지를 그대로 이어붙여 편집한다.
+      // 새 메시지를 만들지 않으므로 중복 전송이 생기지 않는다.
+      const stream = createStreamRenderer({
+        host: {
+          send: async (content) => {
+            const v2 = toComponentV2(content)
+            await message.channel.messages.edit(sent.id, {
+              content: '',
+              ...v2,
+            })
+            return {
+              edit: async (next) => {
+                const editV2 = toComponentV2(next)
+                await message.channel.messages.edit(sent.id, {
+                  content: '',
+                  ...editV2,
+                })
+              },
+              id: sent.id,
+            }
+          },
+          setTyping: () => {
+            if (
+              'sendTyping' in message.channel &&
+              typeof message.channel.sendTyping === 'function'
+            ) {
+              void message.channel.sendTyping()
+            }
+          },
+        },
+      })
+
       const result = await handleSessionReply({
         guildId: message.guild?.id ?? '',
         userId: message.author.id,
         referencedMessageId,
         previousBotResponse: referencedContent,
         provider: this.provider,
-        userMessage,
+        userMessage: userMessage || '첨부한 이미지를 설명해 주세요.',
+        imageUrls,
         memberDisplayName:
           message.member?.displayName ?? message.author.displayName,
         guildName: message.guild?.name,
@@ -623,22 +707,30 @@ class AiMentionExtensionClass extends Extension {
         ),
         tools,
         commandCatalog: await getCommandCatalog(message.guild),
+        openStream: stream,
       })
 
-      try {
-        await message.channel.messages.delete(sent.id)
+      if (result.streamedMessageId !== undefined) {
+        // 답장이 이미 thinking 메시지에 실렸으므로 삭제는 이미 확정됐고,
+        // 세션만 그 메시지에 묶는다.
         thinkingMessageId = undefined
-      } catch (err) {
-        // already deleted
+        bindMessageToSession(result.sessionKey, result.streamedMessageId)
+      } else {
+        try {
+          await message.channel.messages.delete(sent.id)
+          thinkingMessageId = undefined
+        } catch (err) {
+          // already deleted
+        }
+
+        const v2 = toComponentV2(result.response)
+        const replyMsg = await message.reply({ content: '', ...v2 })
+        bindMessageToSession(result.sessionKey, replyMsg.id)
       }
 
       if (result.toolRecords !== undefined && result.toolRecords.length > 0) {
         appendToToolHistory(result.sessionKey, result.toolRecords)
       }
-
-      const v2 = toComponentV2(result.response)
-      const replyMsg = await message.reply({ content: '', ...v2 })
-      bindMessageToSession(result.sessionKey, replyMsg.id)
 
       await this.sendApprovalCards(
         (payload) => message.reply(payload),

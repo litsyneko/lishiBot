@@ -1,5 +1,8 @@
 import type {
+  AiStreamOpenHooks,
+  AiStreamOutput,
   ProviderAdapter,
+  StreamResult,
   ToolDefinitionInput,
 } from '../features/ai/aiPolicy'
 import type { AiStage } from '../features/ai/animationMessages'
@@ -24,6 +27,7 @@ import { logger } from '../utils/logger'
 export type MessageCreateInput = {
   readonly authorBot: boolean
   readonly content: string
+  readonly imageUrls?: readonly string[]
   readonly guildId: string
   readonly userId: string
   readonly hasManageGuild: boolean
@@ -56,6 +60,13 @@ export type MessageCreateContext = {
   readonly reply: (reply: MessageReply) => void
   readonly sendStage?: (stage: AiStage) => void
   readonly triggerTyping?: () => void
+  /**
+   * 스트리밍 메시지를 띄울 수 있으면 제공하는 포트. 미지정이면 기존
+   * 단계 애니메이션 + generate 경로가 그대로 동작한다(점진적 degrade).
+   */
+  readonly openStream?:
+    | ((hooks: AiStreamOpenHooks) => AiStreamOutput)
+    | undefined
 }
 
 export type MessageCreateResult = {
@@ -70,35 +81,82 @@ export type MessageCreateResult = {
     result: unknown
     success: boolean
   }[]
+  /**
+   * 스트리밍 메시지 id. 있으면 최종 답장이 이미 이 메시지에 실려 있으므로
+   * 호출부는 reply()로 다시 보내지 않고 이 id에 세션을 묶어야 한다.
+   */
+  readonly streamedMessageId?: string | undefined
 }
 
 const FOOTER_HINT = '---\n\n-# 이 메시지에 답장하면 대화를 이어갈 수 있어요.'
+
+const EMPTY_RESPONSE_NOTICE =
+  '💭 이번엔 대답을 끝내지 못했어요. 조금 뒤에 다시 물어봐 주세요.'
+const LENGTH_CUT_NOTICE =
+  '✂️ 응답이 너무 길어 잘렸어요. 질문을 좀 더 짧게 적어주실래요?'
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-async function runThinkingAnimation(
+/**
+ * 취소 가능한 단계 애니메이션. 스트리밍이 첫 내용을 띄우면 애니메이션은 더 이상
+ * 필요 없으므로 즉시 중단해 메시지를RENAM juggling 없이 정리한다.
+ */
+type CancellableAnimation = {
+  readonly cancel: () => void
+  readonly done: Promise<void>
+}
+
+function createThinkingAnimation(
   sendStage: (stage: AiStage) => void | Promise<void>,
   editStage: (stage: AiStage) => void | Promise<void>,
   triggerTyping?: () => void,
   totalMs = 2500
-): Promise<void> {
+): CancellableAnimation {
   const stage1ms = 800
   const stage2ms = 800
   const stage3ms = Math.max(0, totalMs - stage1ms - stage2ms)
 
-  triggerTyping?.()
-  await sendStage('permission')
-  await sleep(stage1ms)
+  let signalCancel: () => void = () => undefined
+  const cancelled = new Promise<void>((resolve) => {
+    signalCancel = resolve
+  })
+  let isCancelled = false
 
-  triggerTyping?.()
-  await editStage('understanding')
-  await sleep(stage2ms)
+  // 대기가 끝나거나 취소되면 앞으로 진행한다. ms<=0이면 즉시 통과.
+  const step = async (ms: number): Promise<boolean> => {
+    if (ms <= 0) {
+      return !isCancelled
+    }
+    const outcome = await Promise.race([
+      sleep(ms).then(() => 'elapsed' as const),
+      cancelled.then(() => 'cancelled' as const),
+    ])
+    return outcome === 'elapsed' && !isCancelled
+  }
 
-  triggerTyping?.()
-  await editStage('generating')
-  await sleep(stage3ms)
+  const done = (async () => {
+    triggerTyping?.()
+    await sendStage('permission')
+    if (!(await step(stage1ms))) return
+
+    triggerTyping?.()
+    await editStage('understanding')
+    if (!(await step(stage2ms))) return
+
+    triggerTyping?.()
+    await editStage('generating')
+    await step(stage3ms)
+  })()
+
+  return {
+    cancel: () => {
+      isCancelled = true
+      signalCancel()
+    },
+    done: done.catch(() => undefined),
+  }
 }
 
 export async function handleMessageCreate(
@@ -117,7 +175,10 @@ export async function handleMessageCreate(
       return { handled: false, sessionContinued: false }
     }
 
-    if (mentionInfo.prompt.trim().length === 0) {
+    if (
+      mentionInfo.prompt.trim().length === 0 &&
+      !context.message.imageUrls?.length
+    ) {
       context.reply({ embed: INTRO_INFO, type: 'embed' })
       return { handled: true, sessionContinued: false }
     }
@@ -131,15 +192,18 @@ export async function handleMessageCreate(
       return { handled: true, sessionContinued: false }
     }
 
-    const thinkPromise =
+    // 단계 애니메이션은 스트리밍이 첫 내용을 띄우면 곧바로 취소된다.
+    // 그 전까지는 "권한 확인 → 질문 파악" 표시로 첫 토큰까지의 공백을 메운다.
+    const animation =
       context.sendStage !== undefined && context.editStage !== undefined
-        ? runThinkingAnimation(
+        ? createThinkingAnimation(
             context.sendStage,
             context.editStage,
             context.triggerTyping,
             2500
           )
-        : sleep(2500)
+        : undefined
+    const thinkPromise = animation?.done ?? sleep(2500)
 
     const displayName = context.message.memberDisplayName ?? '사용자'
     const guildName = context.message.guildName ?? '서버'
@@ -159,7 +223,9 @@ export async function handleMessageCreate(
     const personalityBlock = await getMemoryStore().buildPersonalityPrompt(
       context.message.userId
     )
-    const contextHeader = `[대화 시작 - 사용자: ${displayName}] ${permissionInfo} (서버: ${guildName}, 채널: #${channelName})\n\n${mentionInfo.prompt}`
+    const question =
+      mentionInfo.prompt.trim() || '첨부한 이미지를 설명해 주세요.'
+    const contextHeader = `[대화 시작 - 사용자: ${displayName}] ${permissionInfo} (서버: ${guildName}, 채널: #${channelName})\n\n${question}`
     const enrichedPrompt = memoryBlock + contextHeader
 
     const existingHistory = getHistory(sessionKey)
@@ -175,15 +241,98 @@ export async function handleMessageCreate(
       personalityBlock,
       toolHistoryBlock,
     ].filter((part) => part.length > 0)
+    const generateOptions = {
+      tools: context.ai.tools,
+      imageUrls: context.message.imageUrls,
+      maxSteps: 20,
+      systemPrompt:
+        promptParts.length > 1 ? promptParts.join('\n\n') : undefined,
+    }
+
+    // 스트리밍이 가능하면 thinking과 본문이 생성되는 내내 메시지가 갱신된다.
+    // renderer가 이미 화면에 본문을 띄웠으므로 최종 reply()는 보내지 않고
+    // 스트리밍 메시지 id만 돌려준다(이중 전송 방지).
+    if (context.openStream !== undefined) {
+      const provider = context.ai.provider
+      const stream = context.openStream({
+        onFirstContent: () => animation?.cancel(),
+      })
+
+      // 스트리밍이 예기치 않게 죽으면 기존 generate 경로로 되돌린다. 체인이
+      // 마지막까지 보호하므로 여기서는 방어적 처리만 한다. 화면에 반쯤 노출됐을
+      // 수 있으므로 되돌린 결과도 같은 스트리밍 메시지에 최종 편집한다.
+      const response: StreamResult = await (async () => {
+        try {
+          return await provider.stream(
+            enrichedPrompt,
+            existingHistory,
+            generateOptions,
+            {
+              onReasoning: stream.appendReasoning,
+              onText: stream.appendText,
+              onToolCall: stream.noteToolCall,
+              onProviderSwitch: stream.noteProviderSwitch,
+            }
+          )
+        } catch (error) {
+          logger.warn(
+            'AI',
+            `스트리밍 응답 실패(${describeError(error)}) — generate 경로로 폴백`
+          )
+          const fallback = await provider.generate(
+            enrichedPrompt,
+            existingHistory,
+            generateOptions
+          )
+          return { ...fallback, reasoning: '', finishReason: undefined }
+        }
+      })()
+
+      // 스트리밍 실패 후 generate로 되돌렸다면 reasoning은 없다. 하지만
+      // 화면에는 이미 반쯤 노출됐을 수 있으므로 renderer에 그대로 최종
+      // 편집을 맡겨 이중 전송을 막는다.
+      const cleaned = stripToolCallSyntax(stripThinkTags(response.text))
+      const usedTools =
+        response.toolRecords.length > 0
+          ? `\n\n> 사용: ${response.toolRecords.map((r) => r.name).join(', ')}`
+          : ''
+      const finalText =
+        cleaned.trim().length > 0
+          ? `${cleaned}${usedTools}\n\n${FOOTER_HINT}`
+          : describeEmptyResponse(response.finishReason)
+
+      // complete()는 항상 settle 된다. undefined는 "화면에 남은 게 없다"를
+      // 뜻하므로 이때만 기존 reply 경로가 문안을 직접 보낸다.
+      const streamedMessageId = await stream.complete(finalText)
+      await thinkPromise
+
+      if (streamedMessageId === undefined) {
+        context.reply({ content: finalText, type: 'text' })
+        return {
+          handled: true,
+          sessionContinued: false,
+          sessionKey,
+          enrichedPrompt: contextHeader,
+          aiText: cleaned,
+          toolRecords: response.toolRecords,
+        }
+      }
+
+      return {
+        handled: true,
+        sessionContinued: false,
+        sessionKey,
+        enrichedPrompt: contextHeader,
+        aiText: cleaned,
+        streamedMessageId,
+        toolRecords: response.toolRecords,
+      }
+    }
+
     const aiPromise = context.ai.provider.generate(
       enrichedPrompt,
       existingHistory,
-      {
-        tools: context.ai.tools,
-        maxSteps: 20,
-        systemPrompt:
-          promptParts.length > 1 ? promptParts.join('\n\n') : undefined,
-      }
+      generateOptions
     )
 
     const [response] = await Promise.all([aiPromise, thinkPromise])
@@ -193,10 +342,11 @@ export async function handleMessageCreate(
       response.toolRecords.length > 0
         ? `\n\n> 사용: ${response.toolRecords.map((r) => r.name).join(', ')}`
         : ''
-    context.reply({
-      content: `${cleaned}${usedTools}\n\n${FOOTER_HINT}`,
-      type: 'text',
-    })
+    const finalText =
+      cleaned.trim().length > 0
+        ? `${cleaned}${usedTools}\n\n${FOOTER_HINT}`
+        : describeEmptyResponse()
+    context.reply({ content: finalText, type: 'text' })
 
     return {
       handled: true,
@@ -207,12 +357,7 @@ export async function handleMessageCreate(
       toolRecords: response.toolRecords,
     }
   } catch (error) {
-    logger.error(
-      'AI',
-      `멘션 응답 생성 실패: ${
-        error instanceof Error ? error.message : String(error)
-      }`
-    )
+    logger.error('AI', `멘션 응답 생성 실패: ${describeError(error)}`)
     context.reply({
       content:
         '앗, 대답을 만들다가 문제가 생겼어요. 잠시 후에 다시 불러주실 수 있을까요?',
@@ -220,4 +365,28 @@ export async function handleMessageCreate(
     })
     return { handled: true, sessionContinued: false }
   }
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * 본문이 비었을 때 조용히 빈 메시지를 보내지 않도록 한국어로 설명한다.
+ * max_tokens 부족(length)로 잘린 케이스는 원인이 다르므로 구분한다.
+ * 실측 재현: thinking이 예산을 다 쓰면 content:"" + finish_reason:"length" +
+ * HTTP 200이 돌아온다.
+ */
+function describeEmptyResponse(finishReason?: string): string {
+  if (finishReason === 'length') {
+    logger.warn('AI', '빈 응답 감지: finishReason=length (토큰 예산 소진)')
+    return LENGTH_CUT_NOTICE
+  }
+  logger.warn(
+    'AI',
+    `빈 응답 감지${
+      finishReason !== undefined ? `: finishReason=${finishReason}` : ''
+    }`
+  )
+  return EMPTY_RESPONSE_NOTICE
 }
