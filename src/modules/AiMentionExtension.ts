@@ -69,7 +69,6 @@ import {
   buildApprovalCard,
   buildResolvedApprovalCard,
   parseApprovalCustomId,
-  toolNameMap,
 } from '../features/ai/tools/proposalCard'
 import { createToolRegistry } from '../features/ai/tools/toolRegistry'
 import type {
@@ -573,7 +572,12 @@ class AiMentionExtensionClass extends Extension {
       )
     }
 
-    await this.sendApprovalCards((payload) => message.reply(payload), collector)
+    await this.sendApprovalCards(
+      (payload) => message.reply(payload),
+      collector,
+      botMessageId,
+      (id, card) => message.channel.messages.edit(id, card)
+    )
 
     // 온보딩 안내 — AI 응답을 막지 않고 추가 메시지로 전송
     if (guildId.length > 0) {
@@ -703,6 +707,7 @@ class AiMentionExtensionClass extends Extension {
         },
       })
 
+      let responseMessageId: string | undefined
       const result = await handleSessionReply({
         approvalPending: () => collector.hasPending(),
         guildId: message.guild?.id ?? '',
@@ -736,6 +741,7 @@ class AiMentionExtensionClass extends Extension {
         // 답장이 이미 thinking 메시지에 실렸으므로 삭제는 이미 확정됐고,
         // 세션만 그 메시지에 묶는다.
         thinkingMessageId = undefined
+        responseMessageId = result.streamedMessageId
         appendToSession(
           result.sessionKey,
           { content: result.assistantText, role: 'assistant' },
@@ -751,6 +757,7 @@ class AiMentionExtensionClass extends Extension {
 
         const v2 = toComponentV2(result.response)
         const replyMsg = await message.reply({ content: '', ...v2 })
+        responseMessageId = replyMsg.id
         appendToSession(
           result.sessionKey,
           { content: result.assistantText, role: 'assistant' },
@@ -764,7 +771,9 @@ class AiMentionExtensionClass extends Extension {
 
       await this.sendApprovalCards(
         (payload) => message.reply(payload),
-        collector
+        collector,
+        responseMessageId,
+        (id, card) => message.channel.messages.edit(id, card)
       )
     } catch (err) {
       logger.error(
@@ -810,13 +819,18 @@ class AiMentionExtensionClass extends Extension {
   // generate 종료 후, 보류된 위험 도구 제안들을 승인 카드로 전송하고 대기 목록에 등록한다.
   private async sendApprovalCards(
     send: (payload: MessageCreateOptions) => Promise<Message>,
-    collector: ProposalCollector
+    collector: ProposalCollector,
+    responseMessageId?: string,
+    edit?: (
+      id: string,
+      card: ReturnType<typeof buildApprovalCard>
+    ) => Promise<Message>
   ): Promise<void> {
     const proposals = collector.drain()
     if (proposals.length === 0) return
 
     this.pruneExpiredApprovals()
-    for (const proposal of proposals) {
+    for (const [index, proposal] of proposals.entries()) {
       try {
         const dangerGate = (await getServerProfile(proposal.context.guildId))
           .approvalPolicy.dangerGate
@@ -827,8 +841,42 @@ class AiMentionExtensionClass extends Extension {
           proposalId: proposal.id,
           dangerGate,
         })
-        await send({ content: '', ...card })
+        const payload = { content: '', ...card }
+        let cardMessage: Message
+        if (
+          index === 0 &&
+          responseMessageId !== undefined &&
+          edit !== undefined
+        ) {
+          try {
+            cardMessage = await edit(responseMessageId, card)
+          } catch (editError) {
+            logger.warn(
+              'AI',
+              `기존 답변에 승인 카드 표시 실패, 새 카드로 재시도: ${
+                editError instanceof Error
+                  ? editError.message
+                  : String(editError)
+              }`
+            )
+            cardMessage = await send(payload)
+          }
+        } else {
+          cardMessage = await send(payload)
+        }
         this.pendingApprovals.set(proposal.id, proposal)
+        if (cardMessage.id !== responseMessageId) {
+          const sessionKey = getOrCreateSession(
+            proposal.context.guildId,
+            proposal.context.channelId,
+            proposal.requesterId
+          )
+          appendToSession(
+            sessionKey,
+            { content: '승인 대기 중인 작업이 있어요.', role: 'assistant' },
+            cardMessage.id
+          )
+        }
         logger.info(
           'TOOL',
           `승인 카드 전송: ${proposal.toolName} (id=${proposal.id})`
@@ -840,6 +888,23 @@ class AiMentionExtensionClass extends Extension {
             err instanceof Error ? err.message : String(err)
           }`
         )
+        const sessionKey = getOrCreateSession(
+          proposal.context.guildId,
+          proposal.context.channelId,
+          proposal.requesterId
+        )
+        appendToToolHistory(sessionKey, [
+          {
+            name: proposal.toolName,
+            args: proposal.args,
+            result: '승인 카드를 보내지 못해 작업을 실행하지 않았어요.',
+            success: false,
+          },
+        ])
+        appendToSession(sessionKey, {
+          content: '승인 카드를 보내지 못해 작업을 실행하지 않았어요.',
+          role: 'assistant',
+        })
         try {
           await send({
             content:
@@ -1052,61 +1117,70 @@ class AiMentionExtensionClass extends Extension {
         statusLine,
         dangerGate,
       })
-    const updateCard = async (statusLine: string) => {
-      await interaction
-        .update(resolveCard(statusLine))
-        .catch((err: unknown) => {
-          logger.debug(
-            'AI',
-            `card update failed: ${
-              err instanceof Error ? err.message : String(err)
-            }`
-          )
-        })
+    let acknowledged = false
+    const updateCard = async (statusLine: string): Promise<boolean> => {
+      try {
+        if (!acknowledged) {
+          await interaction.update(resolveCard(statusLine))
+          acknowledged = true
+        } else {
+          await interaction.message.edit(resolveCard(statusLine))
+        }
+        return true
+      } catch (err) {
+        logger.error(
+          'AI',
+          `승인 카드 갱신 실패: ${
+            err instanceof Error ? err.message : String(err)
+          }`
+        )
+        return false
+      }
     }
-    // 결정이 끝난 승인 카드는 3초 뒤 자동 제거(채널 정리). 결과는 followUp으로 별도 유지.
-    const scheduleCardRemoval = (): void => {
-      setTimeout(() => {
-        void interaction.message.delete().catch(() => undefined)
-      }, 3000)
-    }
-    const finalizeCard = async (statusLine: string): Promise<void> => {
-      await updateCard(statusLine)
-      scheduleCardRemoval()
-    }
-
-    if (parsed.action === 'deny') {
-      await finalizeCard('🚫 거부됨 — 작업을 실행하지 않았어요.')
-      // 거부도 도구 결과처럼 세션에 남긴다 — 다음 턴에 모델이 "거부됨"을 인지해 재시도하지 않도록.
-      const sessionKey = getOrCreateSession(
-        proposal.context.guildId,
-        proposal.context.channelId,
-        proposal.requesterId
-      )
+    const sessionKey = getOrCreateSession(
+      proposal.context.guildId,
+      proposal.context.channelId,
+      proposal.requesterId
+    )
+    const recordOutcome = (message: string, success: boolean): void => {
       appendToToolHistory(sessionKey, [
         {
           name: proposal.toolName,
           args: proposal.args,
-          result:
-            '사용자가 승인 카드에서 이 작업을 거부했어요. 다시 시도하지 마세요.',
-          success: false,
+          result: message,
+          success,
         },
       ])
+      appendToSession(
+        sessionKey,
+        {
+          content: message,
+          role: 'assistant',
+        },
+        interaction.message.id
+      )
+    }
+
+    if (parsed.action === 'deny') {
+      const outcome = '사용자가 작업을 거부했어요. 작업은 실행되지 않았어요.'
+      await updateCard('🚫 거부됨 — 작업을 실행하지 않았어요.')
+      recordOutcome(outcome, false)
       return
     }
 
     if (Date.now() - proposal.createdAt > APPROVAL_TTL_MS) {
-      await finalizeCard('⏰ 만료됨 — 필요하면 다시 요청해 주세요.')
+      await updateCard('⏰ 만료됨 — 필요하면 다시 요청해 주세요.')
+      recordOutcome('승인 요청이 만료되어 작업을 실행하지 않았어요.', false)
       return
     }
 
     const toolDef = this.toolRegistry?.get(proposal.toolName)
     if (toolDef === undefined) {
-      await finalizeCard('❌ 작업 정보를 찾을 수 없어요.')
+      await updateCard('❌ 작업 정보를 찾을 수 없어요.')
+      recordOutcome('승인된 작업 정보를 찾지 못해 실행하지 않았어요.', false)
       return
     }
 
-    // 승인 시점 권한으로 L3 재검 — 제안 이후 권한이 바뀌었을 수 있다.
     const hasManageGuild =
       interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild) ??
       false
@@ -1121,73 +1195,46 @@ class AiMentionExtensionClass extends Extension {
       hasAdmin
     )
     if (!executeCheck.ok) {
-      await finalizeCard(`⛔ ${executeCheck.reason}`)
+      await updateCard(`⛔ ${executeCheck.reason}`)
+      recordOutcome(`권한 확인 실패: ${executeCheck.reason}`, false)
       return
     }
 
-    await updateCard('✅ 승인됨 — 실행 중...')
+    if (!(await updateCard('✅ 승인됨 — 실행 중...'))) {
+      // Discord가 interaction을 받지 못했다면 도구를 실행하지 않는다.
+      this.pendingApprovals.set(parsed.proposalId, proposal)
+      return
+    }
 
-    const displayName = toolNameMap[proposal.toolName] ?? proposal.toolName
     try {
       const result = await toolDef.execute(proposal.args, proposal.context)
       logger.info(
         'TOOL',
         `승인 실행: ${proposal.toolName} 성공=${result.success}`
       )
-
-      // 세션 기록 — getOrCreateSession 경유로 롤오버/만료 규율을 그대로 따른다.
-      const sessionKey = getOrCreateSession(
-        proposal.context.guildId,
-        proposal.context.channelId,
-        proposal.requesterId
-      )
-      appendToToolHistory(sessionKey, [
-        {
-          name: proposal.toolName,
-          args: proposal.args,
-          result: result.message,
-          success: result.success,
-        },
-      ])
-      appendToSession(sessionKey, {
-        content: `[승인] '${displayName}' 작업 실행을 승인함`,
-        role: 'user',
-      })
-
-      const responseText = result.success
-        ? `${result.message}\n\n> 사용: ${displayName}\n\n-# 이 메시지에 답장하면 대화를 이어갈 수 있어요.`
-        : `실패했어요: ${result.message}\n\n-# 이 메시지에 답장하면 대화를 이어갈 수 있어요.`
-      const v2 = toComponentV2(responseText)
-      const followUpMsg = await interaction.followUp({ content: '', ...v2 })
-      const sessionContent = responseText
-        .split('\n\n-#')[0]
-        .split('\n\n> 사용:')[0]
-        .trim()
-      appendToSession(
-        sessionKey,
-        { content: sessionContent, role: 'assistant' },
-        followUpMsg.id
-      )
+      const outcome = result.success
+        ? `작업 완료: ${result.message}`
+        : `작업 실패: ${result.message}`
+      recordOutcome(outcome, result.success)
+      if (
+        !(await updateCard(result.success ? `✅ ${outcome}` : `❌ ${outcome}`))
+      ) {
+        await interaction.followUp({ content: outcome }).catch(() => undefined)
+      }
     } catch (err) {
-      logger.error(
-        'AI',
-        `승인 작업 실행 오류: ${
-          err instanceof Error ? err.message : String(err)
-        }`
-      )
-      await interaction
-        .followUp({ content: '작업 실행 중 오류가 발생했어요.' })
-        .catch((followErr: unknown) => {
-          logger.debug(
-            'AI',
-            `followUp failed: ${
-              followErr instanceof Error ? followErr.message : String(followErr)
-            }`
-          )
-        })
+      const detail = err instanceof Error ? err.message : String(err)
+      logger.error('AI', `승인 작업 실행 오류: ${detail}`)
+      recordOutcome(`작업 실행 중 오류: ${detail}`, false)
+      if (
+        !(await updateCard(
+          '❌ 작업 실행 중 오류가 발생했어요. 이 메시지에 답장해 다시 요청해 주세요.'
+        ))
+      ) {
+        await interaction
+          .followUp({ content: '작업 실행 중 오류가 발생했어요.' })
+          .catch(() => undefined)
+      }
     }
-    // 승인 실행이 끝났으니(성공/실패 무관) 카드는 3초 뒤 제거, 결과 followUp만 남긴다.
-    scheduleCardRemoval()
   }
 
   // ── /에이전트 서브커맨드 ──
