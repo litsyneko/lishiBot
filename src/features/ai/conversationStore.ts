@@ -17,6 +17,36 @@ const MESSAGES_TABLE = 'ai_session_messages'
 const KST_TZ = 'Asia/Seoul'
 // 부팅 시 프리로드할 세션 범위 (idle TTL 안쪽 세션만 캐시로 복원)
 const PRELOAD_WINDOW_MS = SESSION_TTL_MS
+let metadataColumnUnavailable = false
+
+function isMissingMetadataColumn(error: {
+  code?: string
+  message?: string
+}): boolean {
+  return (
+    (error.code === '42703' || error.code === 'PGRST204') &&
+    (error.message?.includes('metadata') ?? false)
+  )
+}
+
+function restoreImageUrls(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((item): item is string => {
+      if (typeof item !== 'string') return false
+      try {
+        const url = new URL(item)
+        return (
+          url.protocol === 'https:' &&
+          (url.hostname === 'cdn.discordapp.com' ||
+            url.hostname === 'media.discordapp.net')
+        )
+      } catch {
+        return false
+      }
+    })
+    .slice(0, 4)
+}
 
 export type Session = {
   history: ChatMessage[]
@@ -39,7 +69,14 @@ const persistChains = new Map<string, Promise<void>>()
 function enqueue(sessionKey: string, task: () => Promise<void>): void {
   const prev = persistChains.get(sessionKey) ?? Promise.resolve()
   // 체인 유지가 목적이라 개별 실패는 여기서 흡수한다(각 task가 자체 로깅).
-  const next = prev.then(task).catch(() => undefined)
+  const next = prev
+    .then(task)
+    .catch(() => undefined)
+    .finally(() => {
+      if (persistChains.get(sessionKey) === next) {
+        persistChains.delete(sessionKey)
+      }
+    })
   persistChains.set(sessionKey, next)
 }
 
@@ -159,12 +196,30 @@ async function persistMessage(
   const supabase = getSupabase()
   if (supabase === null) return
   try {
-    const { error } = await supabase.from(MESSAGES_TABLE).insert({
+    const row = {
       session_key: sessionKey,
       role: message.role,
       content: message.content,
       discord_message_id: discordMessageId ?? null,
-    })
+    }
+    const metadata = {
+      image_urls: message.imageUrls ?? [],
+      author_id: message.authorId ?? null,
+      sent_at: message.sentAt ?? null,
+      reply_to_message_id: message.replyToMessageId ?? null,
+    }
+    const insertResult = metadataColumnUnavailable
+      ? await supabase.from(MESSAGES_TABLE).insert(row)
+      : await supabase.from(MESSAGES_TABLE).insert({ ...row, metadata })
+    let { error } = insertResult
+    if (error !== null && isMissingMetadataColumn(error)) {
+      metadataColumnUnavailable = true
+      logger.warn(
+        'AiSession',
+        '메시지 metadata 컬럼이 없어 기본 기록만 저장합니다. 027 마이그레이션을 적용해 주세요.'
+      )
+      ;({ error } = await supabase.from(MESSAGES_TABLE).insert(row))
+    }
     if (error !== null) logDbFailure('메시지 저장', error)
     else recordDbSuccess()
   } catch (err) {
@@ -238,9 +293,7 @@ function getOrCreateSession(
   const existing = sessions.get(sessionKey)
   if (existing !== undefined) {
     const rolledOver = kstDateString(existing.startedAt) !== kstDateString(now)
-    if (isOrphaned(existing, now)) {
-      deleteSession(sessionKey)
-    } else if (isExpired(existing, now) && existing.messageIds.size === 0) {
+    if (isExpired(existing, now) || isOrphaned(existing, now)) {
       deleteSession(sessionKey)
     } else if (rolledOver) {
       // KST 날짜가 넘어가면 이어지는 스레드가 있어도 새 세션으로 롤오버한다.
@@ -295,14 +348,24 @@ function reviveSession(sessionKey: string): void {
 // 같은 KST 날짜면 revive 후 sessionKey를 반환한다.
 // 자정(KST)을 넘겼으면 세션을 폐기하고 undefined를 반환한다
 // → 호출자가 getOrCreateSession으로 새 대화를 시작한다(getOrCreateSession 롤오버 경로와 동일 규율).
-function continueSession(referencedMessageId: string): string | undefined {
+function continueSession(
+  referencedMessageId: string,
+  guildId: string,
+  channelId: string,
+  userId: string
+): string | undefined {
   const traced = getSessionByMessage(referencedMessageId)
-  if (traced === undefined) {
+  if (
+    traced === undefined ||
+    traced.session.guildId !== guildId ||
+    traced.session.channelId !== channelId ||
+    traced.session.userId !== userId
+  ) {
     return undefined
   }
   const rolledOver =
     kstDateString(traced.session.startedAt) !== kstDateString(Date.now())
-  if (rolledOver) {
+  if (rolledOver || isExpired(traced.session)) {
     deleteSession(traced.sessionKey)
     return undefined
   }
@@ -313,7 +376,7 @@ function continueSession(referencedMessageId: string): string | undefined {
 function appendToSession(
   sessionKey: string,
   message: ChatMessage,
-  botMessageId?: string
+  discordMessageId?: string
 ): void {
   const session = sessions.get(sessionKey)
   if (session === undefined) {
@@ -322,10 +385,12 @@ function appendToSession(
   const trimmed = [...session.history, message].slice(-MAX_HISTORY_PER_SESSION)
   session.history = trimmed
   session.lastActivity = Date.now()
-  if (botMessageId !== undefined) {
-    bindMessage(sessionKey, session, botMessageId)
+  if (message.role === 'assistant' && discordMessageId !== undefined) {
+    bindMessage(sessionKey, session, discordMessageId)
   }
-  enqueue(sessionKey, () => persistMessage(sessionKey, message, botMessageId))
+  enqueue(sessionKey, () =>
+    persistMessage(sessionKey, message, discordMessageId)
+  )
   enqueue(sessionKey, () => touchSessionMeta(session, sessionKey))
 }
 
@@ -334,7 +399,7 @@ function getHistory(sessionKey: string): readonly ChatMessage[] {
   if (session === undefined) {
     return []
   }
-  if (isExpired(session) && session.messageIds.size === 0) {
+  if (isExpired(session)) {
     deleteSession(sessionKey)
     return []
   }
@@ -406,7 +471,10 @@ function pruneExpiredSessions(): void {
   const now = Date.now()
   for (const sessionKey of Array.from(sessions.keys())) {
     const session = sessions.get(sessionKey)
-    if (session !== undefined && isOrphaned(session, now)) {
+    if (
+      session !== undefined &&
+      (isExpired(session, now) || isOrphaned(session, now))
+    ) {
       deleteSession(sessionKey)
     }
   }
@@ -438,26 +506,55 @@ async function loadAiSessions(): Promise<void> {
       return
     }
 
+    let loadedCount = 0
     for (const row of rows) {
       const sessionKey: string = row.session_key
-      const { data: msgs } = await supabase
+      const { data: msgs, error: messagesError } = await supabase
         .from(MESSAGES_TABLE)
-        .select('role, content, discord_message_id, created_at')
+        .select('*')
         .eq('session_key', sessionKey)
-        .order('created_at', { ascending: true })
+        .order('created_at', { ascending: false })
+        .limit(MAX_HISTORY_PER_SESSION)
+      if (messagesError !== null) {
+        logDbFailure('세션 메시지 로드', messagesError)
+        continue
+      }
 
-      const rows2 = msgs ?? []
+      const rows2 = (msgs ?? []).reverse()
       const history: ChatMessage[] = rows2
         .filter((m) => m.role === 'user' || m.role === 'assistant')
-        .map((m) => ({
-          content: m.content as string,
-          role: m.role as 'user' | 'assistant',
-        }))
+        .map((m) => {
+          const metadata =
+            typeof m.metadata === 'object' && m.metadata !== null
+              ? (m.metadata as Record<string, unknown>)
+              : {}
+          return {
+            content: m.content as string,
+            role: m.role as 'user' | 'assistant',
+            imageUrls: restoreImageUrls(metadata.image_urls),
+            authorId:
+              typeof metadata.author_id === 'string'
+                ? metadata.author_id
+                : undefined,
+            sentAt:
+              typeof metadata.sent_at === 'string'
+                ? metadata.sent_at
+                : undefined,
+            replyToMessageId:
+              typeof metadata.reply_to_message_id === 'string'
+                ? metadata.reply_to_message_id
+                : undefined,
+          }
+        })
         .slice(-MAX_HISTORY_PER_SESSION)
 
       const messageIds = new Set<string>()
       for (const m of rows2) {
-        if (typeof m.discord_message_id === 'string' && m.discord_message_id) {
+        if (
+          m.role === 'assistant' &&
+          typeof m.discord_message_id === 'string' &&
+          m.discord_message_id
+        ) {
           messageIds.add(m.discord_message_id)
           messageIdToSession.set(m.discord_message_id, sessionKey)
         }
@@ -473,8 +570,9 @@ async function loadAiSessions(): Promise<void> {
         channelId: row.channel_id,
         userId: row.user_id,
       })
+      loadedCount += 1
     }
-    logger.info('AiSession', `${rows.length}개 AI 세션 로드 완료`)
+    logger.info('AiSession', `${loadedCount}개 AI 세션 로드 완료`)
   } catch (err) {
     logger.warn('AiSession', `세션 로드 예외(RAM 전용): ${String(err)}`)
   }
@@ -496,15 +594,61 @@ function getActiveSessionsCount(guildId: string): number {
   return count
 }
 
-function clearSessionsForChannel(guildId: string, channelId: string): number {
+function getUserSessionInfo(
+  guildId: string,
+  channelId: string,
+  userId: string
+):
+  | { messageCount: number; imageCount: number; lastActivity: number }
+  | undefined {
+  const sessionKey = `${guildId}:${channelId}:${userId}`
+  const session = sessions.get(sessionKey)
+  if (session === undefined) return undefined
+  if (
+    isExpired(session) ||
+    kstDateString(session.startedAt) !== kstDateString(Date.now())
+  ) {
+    deleteSession(sessionKey)
+    return undefined
+  }
+  return {
+    messageCount: session.history.length,
+    imageCount: session.history.reduce(
+      (count, message) => count + (message.imageUrls?.length ?? 0),
+      0
+    ),
+    lastActivity: session.lastActivity,
+  }
+}
+
+async function clearUserSession(
+  guildId: string,
+  channelId: string,
+  userId: string
+): Promise<boolean> {
+  const sessionKey = `${guildId}:${channelId}:${userId}`
+  if (!sessions.has(sessionKey)) return false
+  deleteSession(sessionKey)
+  await persistChains.get(sessionKey)
+  return true
+}
+
+async function clearSessionsForChannel(
+  guildId: string,
+  channelId: string
+): Promise<number> {
   let count = 0
+  const pending: Promise<void>[] = []
   const prefix = `${guildId}:${channelId}:`
   for (const sessionKey of Array.from(sessions.keys())) {
     if (sessionKey.startsWith(prefix)) {
       deleteSession(sessionKey)
+      const persistence = persistChains.get(sessionKey)
+      if (persistence !== undefined) pending.push(persistence)
       count++
     }
   }
+  await Promise.all(pending)
   return count
 }
 
@@ -523,5 +667,7 @@ export {
   bindMessageToSession,
   pruneExpiredSessions,
   getActiveSessionsCount,
+  getUserSessionInfo,
+  clearUserSession,
   clearSessionsForChannel,
 }

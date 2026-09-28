@@ -31,10 +31,12 @@ import { getCommandCatalog } from '../features/ai/commandCatalog'
 import {
   appendToSession,
   appendToToolHistory,
-  bindMessageToSession,
   clearSessionsForChannel,
+  clearUserSession,
   getActiveSessionsCount,
   getOrCreateSession,
+  getSessionByMessage,
+  getUserSessionInfo,
   loadAiSessions,
 } from '../features/ai/conversationStore'
 import { getMessageImageUrls } from '../features/ai/messageImages'
@@ -258,7 +260,7 @@ class AiMentionExtensionClass extends Extension {
   private toolRegistry: ToolRegistry | undefined
   // 승인 대기 중인 위험 도구 제안 (proposalId → 제안). 버튼 인터랙션이 소비한다.
   private pendingApprovals = new Map<string, ApprovalProposal>()
-  // `/에이전트 셋업` 패널에서 채널 용도 편집 대상으로 고른 채널 (guildId → channelId)
+  // `/에이전트 셋업` 패널별 채널 선택 (패널 메시지 ID → 채널 ID)
   private panelSelectedChannel = new Map<string, string | null>()
 
   private buildToolDefinitions(
@@ -552,10 +554,17 @@ class AiMentionExtensionClass extends Extension {
       result.aiText !== undefined
     ) {
       const sessionKey = getOrCreateSession(guildId, message.channel.id, userId)
-      appendToSession(sessionKey, {
-        content: result.enrichedPrompt,
-        role: 'user',
-      })
+      appendToSession(
+        sessionKey,
+        {
+          content: result.enrichedPrompt,
+          role: 'user',
+          imageUrls: getMessageImageUrls(message),
+          authorId: userId,
+          sentAt: message.createdAt.toISOString(),
+        },
+        message.id
+      )
       appendToSession(
         sessionKey,
         { content: result.aiText, role: 'assistant' },
@@ -606,6 +615,15 @@ class AiMentionExtensionClass extends Extension {
         referencedMessageId
       )
       if (referenced.author.id !== this.client.user?.id) {
+        return
+      }
+      const traced = getSessionByMessage(referencedMessageId)
+      if (
+        traced === undefined ||
+        traced.session.guildId !== (message.guild?.id ?? '') ||
+        traced.session.channelId !== message.channel.id ||
+        traced.session.userId !== message.author.id
+      ) {
         return
       }
 
@@ -691,6 +709,8 @@ class AiMentionExtensionClass extends Extension {
         previousBotResponse: referencedContent,
         provider: this.provider,
         userMessage: userMessage || '첨부한 이미지를 설명해 주세요.',
+        userMessageId: message.id,
+        sentAt: message.createdAt.toISOString(),
         imageUrls,
         memberDisplayName:
           message.member?.displayName ?? message.author.displayName,
@@ -714,7 +734,11 @@ class AiMentionExtensionClass extends Extension {
         // 답장이 이미 thinking 메시지에 실렸으므로 삭제는 이미 확정됐고,
         // 세션만 그 메시지에 묶는다.
         thinkingMessageId = undefined
-        bindMessageToSession(result.sessionKey, result.streamedMessageId)
+        appendToSession(
+          result.sessionKey,
+          { content: result.assistantText, role: 'assistant' },
+          result.streamedMessageId
+        )
       } else {
         try {
           await message.channel.messages.delete(sent.id)
@@ -725,7 +749,11 @@ class AiMentionExtensionClass extends Extension {
 
         const v2 = toComponentV2(result.response)
         const replyMsg = await message.reply({ content: '', ...v2 })
-        bindMessageToSession(result.sessionKey, replyMsg.id)
+        appendToSession(
+          result.sessionKey,
+          { content: result.assistantText, role: 'assistant' },
+          replyMsg.id
+        )
       }
 
       if (result.toolRecords !== undefined && result.toolRecords.length > 0) {
@@ -1195,16 +1223,9 @@ class AiMentionExtensionClass extends Extension {
   ): Promise<void> {
     const data = await this.buildPanelData(
       guildId,
-      this.panelSelectedChannel.get(guildId) ?? null
+      this.panelSelectedChannel.get(interaction.message.id) ?? null
     )
-    await interaction
-      .update(buildAgentSettingsPanel(data))
-      .catch((err: unknown) => {
-        logger.debug(
-          'AI',
-          `패널 갱신 실패: ${err instanceof Error ? err.message : String(err)}`
-        )
-      })
+    await interaction.update(buildAgentSettingsPanel(data))
   }
 
   // 컴포넌트/모달 인터랙션용 관리 권한 검사(관리자·서버관리·오너).
@@ -1221,6 +1242,60 @@ class AiMentionExtensionClass extends Extension {
   }
 
   @agentGroup.command({
+    name: '안내',
+    description: 'AI와 대화하는 방법과 내 세션 관리 명령을 확인합니다.',
+  })
+  async agentHelp(i: ChatInputCommandInteraction) {
+    await replyEphemeral(
+      i,
+      [
+        '🤖 **AI 대화 안내**',
+        '- 메시지 맨 앞에 봇을 멘션하고 질문해 주세요. 이미지를 함께 첨부할 수도 있어요.',
+        '- AI 답장에 답장하면 같은 대화를 이어갑니다. 답장 대화는 시작한 사용자만 이어갈 수 있어요.',
+        '- `/에이전트 내세션`으로 이 채널의 대화 상태를 확인할 수 있어요.',
+        '- `/에이전트 내세션초기화`로 이 채널의 내 대화만 지울 수 있어요.',
+        '- `/에이전트 셋업`과 `/에이전트 상태`는 서버 관리자용이에요.',
+      ].join('\n')
+    )
+  }
+
+  @agentGroup.command({
+    name: '내세션',
+    description: '이 채널에서 내 AI 대화 세션 상태를 확인합니다.',
+  })
+  async agentMySession(i: ChatInputCommandInteraction) {
+    const session = getUserSessionInfo(i.guildId ?? '', i.channelId, i.user.id)
+    await replyEphemeral(
+      i,
+      session === undefined
+        ? '이 채널에 진행 중인 AI 대화가 없어요. 봇을 멘션해 시작해 주세요.'
+        : `이 채널에 AI 대화가 있어요. 저장된 메시지 ${
+            session.messageCount
+          }개 · 이미지 ${session.imageCount}개 · 마지막 활동 ${new Date(
+            session.lastActivity
+          ).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}`
+    )
+  }
+
+  @agentGroup.command({
+    name: '내세션초기화',
+    description: '이 채널의 내 AI 대화 세션만 초기화합니다.',
+  })
+  async agentClearMySession(i: ChatInputCommandInteraction) {
+    await i.deferReply({ flags: MessageFlags.Ephemeral })
+    const cleared = await clearUserSession(
+      i.guildId ?? '',
+      i.channelId,
+      i.user.id
+    )
+    await i.editReply({
+      content: cleared
+        ? '이 채널의 내 AI 대화를 초기화했어요. 다음 멘션부터 새 대화로 시작해요.'
+        : '이 채널에 초기화할 AI 대화가 없어요.',
+    })
+  }
+
+  @agentGroup.command({
     name: '셋업',
     description:
       '관리자: 에이전트의 정체성(소울)·서버 이해·자율 범위를 설정하는 패널을 엽니다.',
@@ -1230,9 +1305,10 @@ class AiMentionExtensionClass extends Extension {
     const guild = i.guild
     if (guild === null) return
 
-    this.panelSelectedChannel.set(guild.id, null)
     const data = await this.buildPanelData(guild.id, null)
     await i.reply(buildAgentSettingsPanel(data))
+    const panelMessage = await i.fetchReply()
+    this.panelSelectedChannel.set(panelMessage.id, null)
   }
 
   @agentGroup.command({
@@ -1320,7 +1396,8 @@ class AiMentionExtensionClass extends Extension {
 
     const action = interaction.customId.slice(AGENT_CFG_PREFIX.length)
     const guildId = guild.id
-    const selected = this.panelSelectedChannel.get(guildId) ?? null
+    const selected =
+      this.panelSelectedChannel.get(interaction.message.id) ?? null
 
     try {
       if (
@@ -1345,7 +1422,10 @@ class AiMentionExtensionClass extends Extension {
         interaction.isChannelSelectMenu() &&
         action === AGENT_CFG_ACTIONS.roleChannel
       ) {
-        this.panelSelectedChannel.set(guildId, interaction.values[0] ?? null)
+        this.panelSelectedChannel.set(
+          interaction.message.id,
+          interaction.values[0] ?? null
+        )
         await this.updatePanel(interaction, guildId)
         return
       }
@@ -1417,7 +1497,10 @@ class AiMentionExtensionClass extends Extension {
       }
 
       if (action === AGENT_CFG_ACTIONS.sessionClear) {
-        const cleared = clearSessionsForChannel(guildId, interaction.channelId)
+        const cleared = await clearSessionsForChannel(
+          guildId,
+          interaction.channelId
+        )
         await this.updatePanel(interaction, guildId)
         await interaction
           .followUp({
@@ -1442,6 +1525,15 @@ class AiMentionExtensionClass extends Extension {
           err instanceof Error ? err.message : String(err)
         }`
       )
+      const errorReply = {
+        content: '설정 처리 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요.',
+        flags: MessageFlags.Ephemeral,
+      } as const
+      if (interaction.replied || interaction.deferred) {
+        await interaction.followUp(errorReply).catch(() => undefined)
+      } else {
+        await interaction.reply(errorReply).catch(() => undefined)
+      }
     }
   }
 

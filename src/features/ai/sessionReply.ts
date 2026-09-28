@@ -26,6 +26,8 @@ export type SessionReplyInput = {
   readonly referencedMessageId: string
   readonly provider: ProviderAdapter
   readonly userMessage: string
+  readonly userMessageId?: string
+  readonly sentAt?: string
   readonly imageUrls?: readonly string[]
   readonly previousBotResponse: string
   readonly memberDisplayName?: string
@@ -45,6 +47,7 @@ export type SessionReplyInput = {
 
 export type SessionReplyResult = {
   readonly response: string
+  readonly assistantText: string
   readonly continuedFromSession: boolean
   readonly sessionKey: string
   readonly toolRecords?: readonly {
@@ -95,15 +98,22 @@ export async function handleSessionReply(
   } = input
 
   let sessionKey: string
-  const continued = continueSession(referencedMessageId)
+  const continued = continueSession(
+    referencedMessageId,
+    guildId,
+    input.channelId,
+    userId
+  )
   if (continued !== undefined) {
     sessionKey = continued
   } else {
     sessionKey = getOrCreateSession(guildId, input.channelId, userId)
-    appendToSession(sessionKey, {
-      content: previousBotResponse,
-      role: 'assistant',
-    })
+    if (previousBotResponse.trim().length > 0) {
+      appendToSession(sessionKey, {
+        content: previousBotResponse,
+        role: 'assistant',
+      })
+    }
   }
 
   const displayName = input.memberDisplayName ?? '사용자'
@@ -122,10 +132,18 @@ export async function handleSessionReply(
   const personalityBlock = await getMemoryStore().buildPersonalityPrompt(userId)
   const contextMessage = memoryBlock + contextPrefix + userMessage
 
-  appendToSession(sessionKey, {
-    content: contextPrefix + userMessage,
-    role: 'user',
-  })
+  appendToSession(
+    sessionKey,
+    {
+      content: contextPrefix + userMessage,
+      role: 'user',
+      imageUrls: input.imageUrls,
+      authorId: userId,
+      sentAt: input.sentAt,
+      replyToMessageId: referencedMessageId,
+    },
+    input.userMessageId
+  )
 
   const history = getHistory(sessionKey).slice(0, -1) as ChatMessage[]
   const toolHistoryBlock = formatToolHistoryForPrompt(sessionKey)
@@ -183,7 +201,6 @@ export async function handleSessionReply(
   }
 
   const cleaned = stripToolCallSyntax(stripThinkTags(result.text))
-  appendToSession(sessionKey, { content: cleaned, role: 'assistant' })
 
   const usedTools =
     result.toolRecords.length > 0
@@ -201,7 +218,8 @@ export async function handleSessionReply(
 
   return {
     response,
-    continuedFromSession: true,
+    assistantText: cleaned,
+    continuedFromSession: continued !== undefined,
     sessionKey,
     toolRecords: result.toolRecords,
     ...(streamedMessageId !== undefined ? { streamedMessageId } : {}),

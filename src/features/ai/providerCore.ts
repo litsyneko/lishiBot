@@ -60,7 +60,20 @@ function toModelMessages(prompt: string, history?: readonly ChatMessage[]) {
 
   if (history !== undefined) {
     for (const msg of history) {
-      messages.push({ content: msg.content, role: msg.role })
+      if (msg.role === 'user' && msg.imageUrls?.length) {
+        messages.push({
+          role: 'user',
+          content: [
+            { type: 'text', text: msg.content },
+            ...msg.imageUrls.map((url) => ({
+              type: 'image' as const,
+              image: new URL(url),
+            })),
+          ],
+        })
+      } else {
+        messages.push({ content: msg.content, role: msg.role })
+      }
     }
   }
 
@@ -160,7 +173,9 @@ function selectHistoryWithinBudget(
   let used = 0
   let start = history.length
   for (let i = history.length - 1; i >= 0; i -= 1) {
-    const cost = estimateTokens(history[i].content)
+    const cost =
+      estimateTokens(history[i].content) +
+      (history[i].imageUrls?.length ?? 0) * 1500
     if (used + cost > budget) break
     used += cost
     start = i

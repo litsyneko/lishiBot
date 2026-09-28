@@ -1,6 +1,10 @@
 export type ChatMessage = {
   readonly content: string
   readonly role: 'assistant' | 'user'
+  readonly imageUrls?: readonly string[]
+  readonly authorId?: string
+  readonly sentAt?: string
+  readonly replyToMessageId?: string
 }
 
 export type AiPermissionInput = {
