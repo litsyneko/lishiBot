@@ -26,7 +26,8 @@ const RATE_LIMIT_BACKOFF_MS = 2000
 
 const THINKING_PLACEHOLDER = '_💭 생각하는 중이에요…_'
 const TOOL_PLACEHOLDER = '🔧 `%s` 도구를 쓰는 중이에요…'
-const PROVIDER_SWITCH_PLACEHOLDER = '🔄 `%s` 님에게 이어서 물어보고 있어요…'
+const PROVIDER_SWITCH_PLACEHOLDER =
+  '🔄 `%s` 님에게 이어서 물어보며 생각하는 중이에요…'
 const EMPTY_RESPONSE_NOTICE =
   '_💭 모델이 대답을 끝내지 못했어요. 조금 뒤에 다시 물어봐 주세요._'
 
@@ -163,6 +164,7 @@ export function createStreamRenderer(
   let finished = false
   let messageGone = false
   let typingTimer: ReturnType<typeof setInterval> | undefined
+  let trailingEditTimer: ReturnType<typeof setTimeout> | undefined
 
   const render = (): string =>
     composeStreamMessage({
@@ -246,14 +248,36 @@ export function createStreamRenderer(
     return editChain
   }
 
+  function clearTrailingEdit(): void {
+    if (trailingEditTimer !== undefined) {
+      clearTimeout(trailingEditTimer)
+      trailingEditTimer = undefined
+    }
+  }
+
+  // 짧게 들어온 reasoning이 스로틀 구간 안에서 끝나더라도 마지막 델타를 표시한다.
+  function scheduleTrailingEdit(delayMs: number): void {
+    if (trailingEditTimer !== undefined) return
+    trailingEditTimer = setTimeout(() => {
+      trailingEditTimer = undefined
+      if (finished || messageGone) return
+      startTyping()
+      lastEditAt = Date.now()
+      void push(render())
+    }, delayMs)
+  }
+
   // 최소간격마다 최신 델타를 보여준다. 줄바꿈이 없는 긴 생각도 진행 상태가 보인다.
   function maybeEdit(): void {
     if (finished || messageGone) {
       return
     }
-    if (message !== undefined && Date.now() - lastEditAt < minEditIntervalMs) {
+    const remaining = minEditIntervalMs - (Date.now() - lastEditAt)
+    if (remaining > 0) {
+      scheduleTrailingEdit(remaining)
       return
     }
+    clearTrailingEdit()
     startTyping()
     // 편집이 끝나기 전에 다음 델타가 또 올 수 있다. 슬롯을 먼저 차지해
     // 같은 시각에 편집이 중복 예약되지 않게 한다.
@@ -267,6 +291,7 @@ export function createStreamRenderer(
     if (finished || messageGone) {
       return
     }
+    clearTrailingEdit()
     startTyping()
     lastEditAt = Date.now()
     void push(render())
@@ -319,6 +344,7 @@ export function createStreamRenderer(
         return message?.id
       }
       finished = true
+      clearTrailingEdit()
       // 생각은 진행 중에만 보여주고, 최종 편집에는 답변만 남긴다.
       reasoningBuffer = ''
       textBuffer = finalText.trim().length > 0 ? finalText : ''

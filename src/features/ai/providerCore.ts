@@ -411,11 +411,13 @@ export async function runStream(
   // 조용히 강등할 수 있다(노출 후에는 체인 폴백이 정답이다).
   let isExposed = false
   let isToolUsed = false
+  let reasoningDeltaChars = 0
   let streamError: unknown
 
   try {
     for await (const part of result.stream) {
       if (part.type === 'reasoning-delta') {
+        reasoningDeltaChars += part.text.length
         isExposed = true
         handlers.onReasoning?.(part.text)
       } else if (part.type === 'text-delta') {
@@ -481,7 +483,7 @@ export async function runStream(
   logger.info(
     'AI',
     `${input.label} 스트리밍 응답 (본문 ${text.length}자, 사고 ${reasoning.length}자, ` +
-      `${toolRecords.length}개 툴 실행, finish=${finalStep.finishReason})`
+      `${toolRecords.length}개 툴 실행, 사고 스트리밍 ${reasoningDeltaChars}자, finish=${finalStep.finishReason})`
   )
 
   return {
