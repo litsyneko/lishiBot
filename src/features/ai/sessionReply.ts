@@ -43,6 +43,7 @@ export type SessionReplyInput = {
   readonly tools?: readonly ToolDefinitionInput[]
   // 길드에 등록된 슬래시 명령어 안내문 (commandCatalog.ts에서 생성)
   readonly commandCatalog?: string
+  readonly recentMessages?: string
   // 스트리밍 출력 포트. 미지정이면 generate 경로로 그대로 동작한다.
   readonly openStream?: AiStreamOutput
 }
@@ -156,6 +157,7 @@ export async function handleSessionReply(
   const promptParts = [
     KOREAN_SYSTEM_PROMPT,
     input.commandCatalog ?? '',
+    input.recentMessages ?? '',
     serverContextBlock,
     personalityBlock,
     toolHistoryBlock,

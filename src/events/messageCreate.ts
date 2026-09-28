@@ -42,6 +42,7 @@ export type MessageCreateInput = {
   readonly channelName?: string
   // 길드에 등록된 슬래시 명령어 안내문 (commandCatalog.ts에서 생성)
   readonly commandCatalog?: string
+  readonly recentMessages?: string
 }
 
 export type MessageCreateAiConfig = {
@@ -239,6 +240,7 @@ export async function handleMessageCreate(
     const promptParts = [
       KOREAN_SYSTEM_PROMPT,
       context.message.commandCatalog ?? '',
+      context.message.recentMessages ?? '',
       serverContextBlock,
       personalityBlock,
       toolHistoryBlock,

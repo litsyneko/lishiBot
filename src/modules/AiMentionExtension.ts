@@ -38,6 +38,7 @@ import {
   getUserSessionInfo,
   loadAiSessions,
 } from '../features/ai/conversationStore'
+import { detectMentionPrompt } from '../features/ai/mentionAi'
 import { getMessageImageUrls } from '../features/ai/messageImages'
 import {
   dismissOnboarding,
@@ -51,6 +52,7 @@ import {
 import { createOpencodeZenProvider } from '../features/ai/opencodeZenProvider'
 import { summarizeMemberPermissions } from '../features/ai/permissionSummary'
 import { checkToolPermissionLayer3 } from '../features/ai/permissions/permissionCheck'
+import { getRecentMessagesForPrompt } from '../features/ai/recentMessages'
 import {
   APPROVAL_TIMEOUT_OPTIONS,
   getServerProfile,
@@ -385,9 +387,19 @@ class AiMentionExtensionClass extends Extension {
     const referencedMessage = reference?.messageId ?? undefined
 
     if (referencedMessage !== undefined) {
-      await this.handleReplyToBotMessage(message, referencedMessage)
-      return
+      const traced = getSessionByMessage(referencedMessage)
+      if (
+        traced !== undefined &&
+        traced.session.guildId === (message.guild?.id ?? '') &&
+        traced.session.channelId === message.channel.id &&
+        traced.session.userId === message.author.id
+      ) {
+        await this.handleReplyToBotMessage(message, referencedMessage)
+        return
+      }
     }
+
+    if (detectMentionPrompt(botId, message.content) === undefined) return
 
     const guildId = message.guild?.id ?? ''
     const userId = message.author.id
@@ -415,7 +427,10 @@ class AiMentionExtensionClass extends Extension {
         false,
       collector
     )
-    const commandCatalog = await getCommandCatalog(message.guild)
+    const [commandCatalog, recentMessages] = await Promise.all([
+      getCommandCatalog(message.guild),
+      getRecentMessagesForPrompt(message),
+    ])
 
     const result = await handleMessageCreate({
       approvalPending: () => collector.hasPending(),
@@ -444,6 +459,7 @@ class AiMentionExtensionClass extends Extension {
           ? undefined
           : message.channel.name,
         commandCatalog,
+        recentMessages,
       },
       sendStage: async (stage: AiStage) => {
         const sent = await message.reply(formatStageMessage(stage))
@@ -748,6 +764,7 @@ class AiMentionExtensionClass extends Extension {
         ),
         tools,
         commandCatalog: await getCommandCatalog(message.guild),
+        recentMessages: await getRecentMessagesForPrompt(message),
         openStream: stream,
       })
 

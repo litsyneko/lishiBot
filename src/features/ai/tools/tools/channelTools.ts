@@ -749,7 +749,7 @@ export function readChannelMessagesTool(client: Client): ToolDefinition {
           },
           limit: {
             type: 'integer',
-            description: '읽을 메시지 개수 (1~100, 기본값 50)',
+            description: '읽을 메시지 개수 (1~20, 기본값 20)',
           },
           includeBots: {
             type: 'boolean',
@@ -781,15 +781,15 @@ export function readChannelMessagesTool(client: Client): ToolDefinition {
       try {
         const channelId = args.channelId as string | undefined
         const channelName = args.channelName as string | undefined
-        const limitRaw = Number(args.limit ?? 50)
+        const limitRaw = Number(args.limit ?? 20)
         const includeBots = Boolean(args.includeBots ?? false)
         const before = args.before as string | undefined
         const after = args.after as string | undefined
 
         const limit =
-          Number.isInteger(limitRaw) && limitRaw >= 1 && limitRaw <= 100
-            ? limitRaw
-            : 50
+          Number.isInteger(limitRaw) && limitRaw >= 1
+            ? Math.min(limitRaw, 20)
+            : 20
 
         const guild = await resolveGuild(client, context)
 
