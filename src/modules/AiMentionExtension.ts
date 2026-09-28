@@ -22,7 +22,6 @@ import {
 } from '../features/ai/animationMessages'
 import { createAnthropicProvider } from '../features/ai/anthropicProvider'
 import {
-  APPROVAL_TTL_MS,
   type ApprovalProposal,
   type ProposalCollector,
   createProposalCollector,
@@ -53,6 +52,7 @@ import { createOpencodeZenProvider } from '../features/ai/opencodeZenProvider'
 import { summarizeMemberPermissions } from '../features/ai/permissionSummary'
 import { checkToolPermissionLayer3 } from '../features/ai/permissions/permissionCheck'
 import {
+  APPROVAL_TIMEOUT_OPTIONS,
   getServerProfile,
   getSoul,
   getStandingOrders,
@@ -258,7 +258,15 @@ class AiMentionExtensionClass extends Extension {
   private provider: ProviderAdapter | undefined
   private toolRegistry: ToolRegistry | undefined
   // 승인 대기 중인 위험 도구 제안 (proposalId → 제안). 버튼 인터랙션이 소비한다.
-  private pendingApprovals = new Map<string, ApprovalProposal>()
+  private pendingApprovals = new Map<
+    string,
+    ApprovalProposal & {
+      cardMessage: Message
+      expiresAt: number
+      timer: ReturnType<typeof setTimeout>
+      dangerGate: 'admin_only' | 'requester' | 'none'
+    }
+  >()
   // `/에이전트 셋업` 패널별 채널 선택 (패널 메시지 ID → 채널 ID)
   private panelSelectedChannel = new Map<string, string | null>()
 
@@ -807,12 +815,61 @@ class AiMentionExtensionClass extends Extension {
     }
   }
 
+  private async expireApproval(id: string): Promise<void> {
+    const proposal = this.pendingApprovals.get(id)
+    if (proposal === undefined) return
+    if (Date.now() < proposal.expiresAt) {
+      clearTimeout(proposal.timer)
+      proposal.timer = setTimeout(() => {
+        void this.expireApproval(id)
+      }, proposal.expiresAt - Date.now())
+      return
+    }
+    this.pendingApprovals.delete(id)
+    clearTimeout(proposal.timer)
+    const outcome =
+      '승인 대기 시간이 지나 자동 거부했어요. 작업은 실행되지 않았어요.'
+    const sessionKey = getOrCreateSession(
+      proposal.context.guildId,
+      proposal.context.channelId,
+      proposal.requesterId
+    )
+    appendToToolHistory(sessionKey, [
+      {
+        name: proposal.toolName,
+        args: proposal.args,
+        result: outcome,
+        success: false,
+      },
+    ])
+    appendToSession(
+      sessionKey,
+      { content: outcome, role: 'assistant' },
+      proposal.cardMessage.id
+    )
+    try {
+      await proposal.cardMessage.edit(
+        buildResolvedApprovalCard({
+          toolName: proposal.toolName,
+          args: proposal.args,
+          requesterId: proposal.requesterId,
+          statusLine: '⏰ 자동 거부됨 — 대기 시간이 지났어요.',
+          dangerGate: proposal.dangerGate,
+        })
+      )
+    } catch (err) {
+      logger.warn(
+        'AI',
+        `자동 거부 카드 갱신 실패: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      )
+    }
+  }
+
   private pruneExpiredApprovals(): void {
-    const now = Date.now()
     for (const [id, proposal] of this.pendingApprovals) {
-      if (now - proposal.createdAt > APPROVAL_TTL_MS) {
-        this.pendingApprovals.delete(id)
-      }
+      if (Date.now() >= proposal.expiresAt) void this.expireApproval(id)
     }
   }
 
@@ -832,13 +889,16 @@ class AiMentionExtensionClass extends Extension {
     this.pruneExpiredApprovals()
     for (const [index, proposal] of proposals.entries()) {
       try {
-        const dangerGate = (await getServerProfile(proposal.context.guildId))
-          .approvalPolicy.dangerGate
+        const approvalPolicy = (
+          await getServerProfile(proposal.context.guildId)
+        ).approvalPolicy
+        const dangerGate = approvalPolicy.dangerGate
         const card = buildApprovalCard({
           toolName: proposal.toolName,
           args: proposal.args,
           requesterId: proposal.requesterId,
           proposalId: proposal.id,
+          timeoutSeconds: approvalPolicy.timeoutSeconds,
           dangerGate,
         })
         const payload = { content: '', ...card }
@@ -864,7 +924,17 @@ class AiMentionExtensionClass extends Extension {
         } else {
           cardMessage = await send(payload)
         }
-        this.pendingApprovals.set(proposal.id, proposal)
+        const expiresAt = Date.now() + approvalPolicy.timeoutSeconds * 1000
+        const timer = setTimeout(() => {
+          void this.expireApproval(proposal.id)
+        }, approvalPolicy.timeoutSeconds * 1000)
+        this.pendingApprovals.set(proposal.id, {
+          ...proposal,
+          cardMessage,
+          expiresAt,
+          timer,
+          dangerGate,
+        })
         if (cardMessage.id !== responseMessageId) {
           const sessionKey = getOrCreateSession(
             proposal.context.guildId,
@@ -1106,8 +1176,30 @@ class AiMentionExtensionClass extends Extension {
       return
     }
 
+    // 만료 타이머나 다른 클릭이 먼저 소비했다면 도구를 실행하지 않는다.
+    if (this.pendingApprovals.get(parsed.proposalId) !== proposal) {
+      await interaction
+        .reply({
+          content: '이미 처리됐거나 자동 거부된 승인 요청이에요.',
+          flags: MessageFlags.Ephemeral,
+        })
+        .catch(() => undefined)
+      return
+    }
+    if (Date.now() >= proposal.expiresAt) {
+      await this.expireApproval(parsed.proposalId)
+      await interaction
+        .reply({
+          content: '대기 시간이 지나 자동 거부됐어요.',
+          flags: MessageFlags.Ephemeral,
+        })
+        .catch(() => undefined)
+      return
+    }
+
     // 여기서부터 단일 소비 보장 — 더블클릭/중복 처리를 막기 위해 먼저 제거한다.
     this.pendingApprovals.delete(parsed.proposalId)
+    clearTimeout(proposal.timer)
 
     const resolveCard = (statusLine: string) =>
       buildResolvedApprovalCard({
@@ -1168,7 +1260,7 @@ class AiMentionExtensionClass extends Extension {
       return
     }
 
-    if (Date.now() - proposal.createdAt > APPROVAL_TTL_MS) {
+    if (Date.now() >= proposal.expiresAt) {
       await updateCard('⏰ 만료됨 — 필요하면 다시 요청해 주세요.')
       recordOutcome('승인 요청이 만료되어 작업을 실행하지 않았어요.', false)
       return
@@ -1203,6 +1295,14 @@ class AiMentionExtensionClass extends Extension {
     if (!(await updateCard('✅ 승인됨 — 실행 중...'))) {
       // Discord가 interaction을 받지 못했다면 도구를 실행하지 않는다.
       this.pendingApprovals.set(parsed.proposalId, proposal)
+      const remaining = proposal.expiresAt - Date.now()
+      if (remaining > 0) {
+        proposal.timer = setTimeout(() => {
+          void this.expireApproval(parsed.proposalId)
+        }, remaining)
+      } else {
+        void this.expireApproval(parsed.proposalId)
+      }
       return
     }
 
@@ -1270,6 +1370,7 @@ class AiMentionExtensionClass extends Extension {
       soul: getSoul(profile),
       concept: profile.concept,
       dangerGate: profile.approvalPolicy.dangerGate,
+      timeoutSeconds: profile.approvalPolicy.timeoutSeconds,
       standingOrders: getStandingOrders(profile),
       channelRoles: profile.channelRoles,
       selectedChannelId,
@@ -1430,7 +1531,7 @@ class AiMentionExtensionClass extends Extension {
         `- 상시 지침: ${orders.length}개`,
         `- 위험 작업 승인 정책: ${
           DANGER_GATE_LABELS[profile.approvalPolicy.dangerGate]
-        }`,
+        } · ${profile.approvalPolicy.timeoutSeconds}초 뒤 자동 거부`,
         `- 활성 세션: ${activeSessions}개 · 승인 대기: ${pendingCount}건`,
         '- 채널 용도:',
         channelLines,
@@ -1475,7 +1576,27 @@ class AiMentionExtensionClass extends Extension {
           value === 'none'
         ) {
           await upsertServerProfile(guildId, {
-            approvalPolicy: { dangerGate: value },
+            approvalPolicy: {
+              ...(await getServerProfile(guildId)).approvalPolicy,
+              dangerGate: value,
+            },
+          })
+        }
+        await this.updatePanel(interaction, guildId)
+        return
+      }
+
+      if (
+        interaction.isStringSelectMenu() &&
+        action === AGENT_CFG_ACTIONS.timeout
+      ) {
+        const seconds = Number(interaction.values[0])
+        if (APPROVAL_TIMEOUT_OPTIONS.some((option) => option === seconds)) {
+          await upsertServerProfile(guildId, {
+            approvalPolicy: {
+              ...(await getServerProfile(guildId)).approvalPolicy,
+              timeoutSeconds: seconds,
+            },
           })
         }
         await this.updatePanel(interaction, guildId)

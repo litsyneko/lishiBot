@@ -1,4 +1,4 @@
-import type { ApprovalPolicy } from './serverProfile'
+import { APPROVAL_TIMEOUT_OPTIONS, type ApprovalPolicy } from './serverProfile'
 import {
   ActionRowBuilder,
   ButtonBuilder,
@@ -26,6 +26,7 @@ export const AGENT_CFG_MODAL_PREFIX = 'agentcfgModal:'
 
 export const AGENT_CFG_ACTIONS = {
   policy: 'policy',
+  timeout: 'timeout',
   soulEdit: 'soulEdit',
   conceptEdit: 'conceptEdit',
   orderAdd: 'orderAdd',
@@ -51,6 +52,7 @@ export type AgentPanelData = {
   readonly soul: string | null
   readonly concept: string | null
   readonly dangerGate: ApprovalPolicy['dangerGate']
+  readonly timeoutSeconds: number
   readonly standingOrders: readonly string[]
   readonly channelRoles: Record<string, string>
   // 채널 용도 편집 대상으로 선택해 둔 채널(없으면 null).
@@ -133,7 +135,9 @@ function buildHeaderContainer(
     .addTextDisplayComponents(
       new TextDisplayBuilder().setContent(
         [
-          `- 위험 작업 승인: **${DANGER_GATE_LABELS[data.dangerGate]}**`,
+          `- 위험 작업 승인: **${
+            DANGER_GATE_LABELS[data.dangerGate]
+          }** · 대기 **${data.timeoutSeconds}초**`,
           `- 활성 세션: **${data.activeSessions}개** · 승인 대기: **${data.pendingApprovals}건**`,
           `- 온보딩: **${onboardingText}**`,
         ].join('\n')
@@ -224,6 +228,18 @@ function buildPolicyContainer(
       )
     )
 
+  const timeoutMenu = new StringSelectMenuBuilder()
+    .setCustomId(cid(AGENT_CFG_ACTIONS.timeout))
+    .setPlaceholder('승인 대기 시간 선택')
+    .addOptions(
+      APPROVAL_TIMEOUT_OPTIONS.map((seconds) =>
+        new StringSelectMenuOptionBuilder()
+          .setLabel(`${seconds}초 뒤 자동 거부`)
+          .setValue(String(seconds))
+          .setDefault(seconds === data.timeoutSeconds)
+      )
+    )
+
   return new ContainerBuilder()
     .setAccentColor(accent)
     .addTextDisplayComponents(
@@ -232,7 +248,8 @@ function buildPolicyContainer(
       )
     )
     .addActionRowComponents(
-      new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu)
+      new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu),
+      new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(timeoutMenu)
     )
 }
 

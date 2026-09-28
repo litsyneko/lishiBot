@@ -6,6 +6,7 @@ import { getSupabase } from './supabase'
 export type ApprovalPolicy = {
   /** danger 도구 승인 주체. admin_only=관리자만, requester=요청자 본인, none=승인 불필요 */
   readonly dangerGate: 'admin_only' | 'requester' | 'none'
+  readonly timeoutSeconds: number
 }
 
 export type ServerProfile = {
@@ -23,7 +24,13 @@ export type ServerProfile = {
 const TABLE = 'server_profile'
 const CACHE_TTL_MS = 10 * 60 * 1000 // 10분
 
-const DEFAULT_APPROVAL_POLICY: ApprovalPolicy = { dangerGate: 'admin_only' }
+export const DEFAULT_APPROVAL_TIMEOUT_SECONDS = 60
+export const APPROVAL_TIMEOUT_OPTIONS = [15, 30, 60, 120, 300] as const
+
+const DEFAULT_APPROVAL_POLICY: ApprovalPolicy = {
+  dangerGate: 'admin_only',
+  timeoutSeconds: DEFAULT_APPROVAL_TIMEOUT_SECONDS,
+}
 
 // ── 하드코딩 안전 기본값 (테이블 부재/프로필 없음 시 사용) ──
 function defaultProfile(guildId: string): ServerProfile {
@@ -68,7 +75,12 @@ function parseApprovalPolicy(raw: unknown): ApprovalPolicy {
     const obj = raw as Record<string, unknown>
     const gate = obj.dangerGate
     if (gate === 'admin_only' || gate === 'requester' || gate === 'none') {
-      return { dangerGate: gate }
+      const timeoutSeconds = APPROVAL_TIMEOUT_OPTIONS.includes(
+        obj.timeoutSeconds as (typeof APPROVAL_TIMEOUT_OPTIONS)[number]
+      )
+        ? (obj.timeoutSeconds as number)
+        : DEFAULT_APPROVAL_TIMEOUT_SECONDS
+      return { dangerGate: gate, timeoutSeconds }
     }
   }
   return DEFAULT_APPROVAL_POLICY

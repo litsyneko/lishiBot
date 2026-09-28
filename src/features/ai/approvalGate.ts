@@ -17,8 +17,6 @@ export type ApprovalProposal = {
   readonly createdAt: number
 }
 
-export const APPROVAL_TTL_MS = 5 * 60 * 1000
-
 export type ProposalCollector = {
   // 실행 대신 제안을 기록하고, 모델에는 승인 대기 상태만 반환한다.
   readonly propose: (

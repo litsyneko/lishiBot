@@ -160,6 +160,7 @@ export type ApprovalCardInput = {
   readonly args: Record<string, unknown>
   readonly requesterId: string
   readonly proposalId: string
+  readonly timeoutSeconds: number
   readonly dangerGate: 'admin_only' | 'requester' | 'none'
 }
 
@@ -194,7 +195,7 @@ export function buildApprovalCard(input: ApprovalCardInput): {
     .addSeparatorComponents(divider())
     .addTextDisplayComponents(
       new TextDisplayBuilder().setContent(
-        '-# ⏳ 5분 안에 결정하지 않으면 만료돼요.'
+        `-# ⏳ ${input.timeoutSeconds}초 안에 결정하지 않으면 자동 거부돼요.`
       )
     )
     .addActionRowComponents(buttons)
