@@ -49,6 +49,7 @@ export type ToolExecutionContext = {
 
 export type ToolPermission = {
   readonly requireManageGuild: boolean
+  readonly requireManageChannels?: boolean
   readonly requireAdmin: boolean
   readonly risk?: 'info' | 'warning' | 'danger'
   readonly runtimeCheck?: (

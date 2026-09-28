@@ -193,6 +193,10 @@ type CoreRequest = {
   readonly system: string
   readonly messages: ModelMessage[]
   readonly tools: ToolSet | undefined
+  readonly toolChoice?:
+    | 'auto'
+    | 'required'
+    | { readonly type: 'tool'; readonly toolName: string }
   readonly temperature: number | undefined
   readonly providerOptions: Record<string, Record<string, string>> | undefined
   readonly maxRetries: number
@@ -274,6 +278,7 @@ function resolveCoreRequest(
     system: systemPrompt,
     messages,
     tools: buildToolsParam(input.options?.tools),
+    toolChoice: input.options?.toolChoice,
     // 표준 sampling 파라미터. OpenAI-호환 엔드포인트(Ollama 포함)는 본문
     // temperature로 그대로 받으며, undefined면 본문에서 아예 빠진다.
     temperature: input.temperature,

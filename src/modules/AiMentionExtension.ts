@@ -274,6 +274,7 @@ class AiMentionExtensionClass extends Extension {
     context: ToolExecutionContext,
     hasManageGuild: boolean,
     hasAdmin: boolean,
+    hasManageChannels: boolean,
     collector: ProposalCollector
   ): ToolDefinitionInput[] {
     if (this.toolRegistry === undefined) return []
@@ -287,7 +288,8 @@ class AiMentionExtensionClass extends Extension {
         {},
         context,
         hasManageGuild,
-        hasAdmin
+        hasAdmin,
+        hasManageChannels
       )
       if (!permCheck.ok) continue
 
@@ -409,6 +411,8 @@ class AiMentionExtensionClass extends Extension {
       mentionContext,
       hasManageGuild,
       hasAdmin,
+      message.member?.permissions.has(PermissionFlagsBits.ManageChannels) ??
+        false,
       collector
     )
     const commandCatalog = await getCommandCatalog(message.guild)
@@ -680,6 +684,8 @@ class AiMentionExtensionClass extends Extension {
         replyContext,
         hasManageGuild,
         hasAdmin,
+        message.member?.permissions.has(PermissionFlagsBits.ManageChannels) ??
+          false,
         collector
       )
 
@@ -1284,7 +1290,9 @@ class AiMentionExtensionClass extends Extension {
       proposal.args,
       proposal.context,
       hasManageGuild,
-      hasAdmin
+      hasAdmin,
+      interaction.memberPermissions?.has(PermissionFlagsBits.ManageChannels) ??
+        false
     )
     if (!executeCheck.ok) {
       await updateCard(`⛔ ${executeCheck.reason}`)

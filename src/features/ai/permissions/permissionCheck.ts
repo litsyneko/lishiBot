@@ -14,7 +14,8 @@ export function checkToolPermissionLayer3(
   args: Record<string, unknown>,
   context: ToolExecutionContext,
   hasManageGuild: boolean,
-  hasAdmin: boolean
+  hasAdmin: boolean,
+  hasManageChannels = false
 ): PermissionCheckResult {
   // L3a: re-verify base permissions (may have changed since proposal)
   if (definition.permission.requireAdmin && !hasAdmin) {
@@ -29,6 +30,13 @@ export function checkToolPermissionLayer3(
       ok: false,
       reason:
         '권한이 변경되어 이 작업을 더 이상 실행할 수 없어요. (서버 관리 권한 필요)',
+    }
+  }
+
+  if (definition.permission.requireManageChannels && !hasManageChannels) {
+    return {
+      ok: false,
+      reason: '채널 관리 권한이 필요해요.',
     }
   }
 

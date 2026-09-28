@@ -50,6 +50,10 @@ export type GenerateOptions = {
   readonly imageUrls?: readonly string[]
   readonly tools?: readonly ToolDefinitionInput[]
   readonly maxSteps?: number
+  readonly toolChoice?:
+    | 'auto'
+    | 'required'
+    | { readonly type: 'tool'; readonly toolName: string }
   readonly systemPrompt?: string
 }
 

@@ -6,6 +6,7 @@ import type {
   StreamResult,
   ToolDefinitionInput,
 } from './aiPolicy'
+import { recoverFabricatedApproval } from './approvalResponse'
 import {
   appendToSession,
   continueSession,
@@ -203,6 +204,20 @@ export async function handleSessionReply(
         finishReason: undefined,
       }
     }
+  }
+
+  const recovered = await recoverFabricatedApproval(
+    provider,
+    contextMessage,
+    history,
+    generateOptions,
+    result,
+    input.approvalPending ?? (() => false)
+  )
+  result = {
+    ...recovered,
+    reasoning: result.reasoning,
+    finishReason: result.finishReason,
   }
 
   const approvalPending = input.approvalPending?.() ?? false

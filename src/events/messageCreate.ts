@@ -6,6 +6,7 @@ import type {
   ToolDefinitionInput,
 } from '../features/ai/aiPolicy'
 import type { AiStage } from '../features/ai/animationMessages'
+import { recoverFabricatedApproval } from '../features/ai/approvalResponse'
 import {
   formatToolHistoryForPrompt,
   getHistory,
@@ -262,7 +263,7 @@ export async function handleMessageCreate(
       // 스트리밍이 예기치 않게 죽으면 기존 generate 경로로 되돌린다. 체인이
       // 마지막까지 보호하므로 여기서는 방어적 처리만 한다. 화면에 반쯤 노출됐을
       // 수 있으므로 되돌린 결과도 같은 스트리밍 메시지에 최종 편집한다.
-      const response: StreamResult = await (async () => {
+      const initialResponse: StreamResult = await (async () => {
         try {
           return await provider.stream(
             enrichedPrompt,
@@ -292,6 +293,20 @@ export async function handleMessageCreate(
           return { ...fallback, reasoning: '', finishReason: undefined }
         }
       })()
+
+      const recovered = await recoverFabricatedApproval(
+        provider,
+        enrichedPrompt,
+        existingHistory,
+        generateOptions,
+        initialResponse,
+        context.approvalPending ?? (() => false)
+      )
+      const response: StreamResult = {
+        ...recovered,
+        reasoning: initialResponse.reasoning,
+        finishReason: initialResponse.finishReason,
+      }
 
       // 스트리밍 실패 후 generate로 되돌렸다면 reasoning은 없다. 하지만
       // 화면에는 이미 반쯤 노출됐을 수 있으므로 renderer에 그대로 최종
@@ -343,7 +358,15 @@ export async function handleMessageCreate(
       generateOptions
     )
 
-    const [response] = await Promise.all([aiPromise, thinkPromise])
+    const [initialResponse] = await Promise.all([aiPromise, thinkPromise])
+    const response = await recoverFabricatedApproval(
+      context.ai.provider,
+      enrichedPrompt,
+      existingHistory,
+      generateOptions,
+      initialResponse,
+      context.approvalPending ?? (() => false)
+    )
 
     const approvalPending = context.approvalPending?.() ?? false
     const cleaned = approvalPending
