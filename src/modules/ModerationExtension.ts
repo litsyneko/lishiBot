@@ -34,8 +34,6 @@ import {
   TextDisplayBuilder,
 } from 'discord.js'
 
-const WARNING_EMOJI = '<:kawaiicaution:1521755658792206366>'
-
 const CENSORED_CONTENT_LIMIT = 800
 
 function formatTimeoutDuration(ms: number): string {
@@ -213,25 +211,24 @@ class ModerationExtensionClass extends Extension {
       const timeoutMs = timeoutDurationFor(entry.result.severity)
 
       const lines = [
-        `### ${WARNING_EMOJI} ${emoji} 자동 검열 조치`,
-        `**대상:** ${entry.message.author.toString()} (${
+        `### 🛡️ 자동 검열 조치 · <#${entry.message.channel.id}>`,
+        `**대상:** ${entry.message.author.toString()} (\`${
           entry.message.author.tag
-        })`,
-        `**사유:** ${entry.result.reason}`,
-        `**심각도:** ${severityLabel}`,
-        `**검열된 내용:**\n${formatCensoredContent(entry.message.content)}`,
-        `**조치:** ${entry.actions.deleted ? '메시지 삭제' : '삭제 실패'} · ${
+        }\`)`,
+        `**사유:** ${emoji} ${entry.result.reason} (${severityLabel})`,
+        `**조치:** ${entry.actions.deleted ? '메시지 삭제' : '삭제 실패'}${
           entry.actions.timedOut
-            ? `타임아웃 적용${
+            ? ` · 타임아웃${
                 timeoutMs !== null
                   ? ` (${formatTimeoutDuration(timeoutMs)})`
                   : ''
               }`
-            : '타임아웃 미적용'
+            : ''
         }`,
-        `-# 채널: <#${entry.message.channel.id}> · 메시지 ID: ${
-          entry.message.id
-        } · <t:${Math.floor(messageTimestamp / 1000)}:F>`,
+        `**원문 내용:**\n${formatCensoredContent(entry.message.content)}`,
+        `-# 메시지 ID: ${entry.message.id} · <t:${Math.floor(
+          messageTimestamp / 1000
+        )}:R>`,
       ]
 
       await channel.send({

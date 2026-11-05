@@ -2,7 +2,6 @@ import { logger } from '../../utils/logger'
 import { getSupabase } from '../ai/supabase'
 import {
   type FilterSeverity,
-  MODERATION_GUILD_ID,
   MODERATION_IMMUNE_ROLE_IDS,
   type ModerationCategory,
 } from './moderationConfig'
@@ -26,7 +25,7 @@ const cache = new Map<string, ModerationSettings>()
 function defaultRow(guildId: string): ModerationSettings {
   return {
     disabled_categories: [],
-    enabled: guildId === MODERATION_GUILD_ID,
+    enabled: false,
     exempt_channels: [],
     guild_id: guildId,
     immune_roles: [],

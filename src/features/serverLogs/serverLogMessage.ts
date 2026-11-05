@@ -1,8 +1,5 @@
 import { formatAuditChange } from './auditLogFormatter'
-import {
-  SERVER_LOG_CATEGORY_DEFINITIONS,
-  type ServerLogCategory,
-} from './serverLogCategories'
+import { type ServerLogCategory } from './serverLogCategories'
 import {
   type BulkDeleteDetails,
   type MemberActivity,
@@ -18,16 +15,11 @@ import {
   ContainerBuilder,
   FileBuilder,
   SectionBuilder,
-  SeparatorBuilder,
   TextDisplayBuilder,
   ThumbnailBuilder,
 } from '@discordjs/builders'
 import type { Client, Guild } from 'discord.js'
-import {
-  AuditLogEvent,
-  type GuildAuditLogsEntry,
-  SeparatorSpacingSize,
-} from 'discord.js'
+import { AuditLogEvent, type GuildAuditLogsEntry } from 'discord.js'
 
 const ACTION_LABELS: Readonly<Partial<Record<AuditLogEvent, string>>> = {
   [AuditLogEvent.ApplicationCommandPermissionUpdate]: '앱 명령어 권한 변경',
@@ -105,7 +97,6 @@ const ACTION_LABELS: Readonly<Partial<Record<AuditLogEvent, string>>> = {
 const CATEGORY_COLORS: Readonly<Record<ServerLogCategory, number>> = {
   automod: 0xe74c3c,
   channels: 0x3498db,
-  clantag: 0xe67e22,
   expressions: 0xf1c40f,
   invites: 0x1abc9c,
   members: 0x9b59b6,
@@ -134,7 +125,6 @@ export function buildServerLogMessage(
   guild: Guild | undefined,
   client: Client | undefined
 ): ContainerBuilder {
-  const categoryLabel = categoryLabelFor(category)
   const actionLabel = ACTION_LABELS[entry.action] ?? `관리 작업 ${entry.action}`
   const executor = formatExecutor(entry.executorId)
   const target = formatTarget(entry)
@@ -145,27 +135,26 @@ export function buildServerLogMessage(
   const executorAvatar = resolveUserAvatar(guild, entry.executorId)
   const footerText = formatFooter(client)
 
-  const container = new ContainerBuilder()
-    .setAccentColor(CATEGORY_COLORS[category])
-    .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(
-        `# ${actionLabel}\n-# ${categoryLabel} · <t:${Math.floor(
-          entry.createdTimestamp / 1000
-        )}:F>`
-      )
-    )
-    .addSeparatorComponents(buildDivider())
-
-  const infoLines = [
-    `실행자: ${executor}`,
-    `대상: ${target}`,
-    extra !== null ? extra : null,
-    reason !== null ? `사유: ${reason}` : null,
-  ].filter((line): line is string => line !== null)
-
-  const infoText = new TextDisplayBuilder().setContent(
-    `### 실행 정보\n${infoLines.join('\n')}`
+  const container = new ContainerBuilder().setAccentColor(
+    CATEGORY_COLORS[category]
   )
+
+  const lines = [
+    `### ⚙️ ${actionLabel} · <t:${Math.floor(
+      entry.createdTimestamp / 1000
+    )}:R>`,
+    `**실행자:** ${executor} · **대상:** ${target}`,
+  ]
+
+  if (extra !== null) lines.push(extra)
+  if (reason !== null) lines.push(`**사유:** ${reason}`)
+  if (changes !== null) {
+    lines.push(`\n**변경 내역:**\n${changes}`)
+  } else if (actionKind === 'update') {
+    lines.push('\n-# 상세 변경 내역이 제공되지 않았어요.')
+  }
+
+  const infoText = new TextDisplayBuilder().setContent(lines.join('\n'))
 
   if (executorAvatar !== null) {
     const section = new SectionBuilder()
@@ -174,22 +163,6 @@ export function buildServerLogMessage(
     container.addSectionComponents(section)
   } else {
     container.addTextDisplayComponents(infoText)
-  }
-
-  if (changes !== null) {
-    container
-      .addSeparatorComponents(buildDivider())
-      .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(`### 변경 내역\n${changes}`)
-      )
-  } else if (actionKind === 'update') {
-    container
-      .addSeparatorComponents(buildDivider())
-      .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(
-          '### 변경 내역\n-# 이번 작업에서는 상세 변경 필드가 제공되지 않았어요.'
-        )
-      )
   }
 
   if (footerText !== null) {
@@ -231,7 +204,6 @@ export function buildVoiceLogMessage(
   guild: Guild | undefined,
   client: Client | undefined
 ): ContainerBuilder {
-  const categoryLabel = categoryLabelFor(category)
   const description = describeVoiceActivity(activity)
   const channelText =
     activity.channelId !== null ? `<#${activity.channelId}>` : '알 수 없음'
@@ -242,18 +214,25 @@ export function buildVoiceLogMessage(
     CATEGORY_COLORS[category]
   )
 
-  container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(
-      `# 음성 활동: ${activityKindLabel(
-        activity.kind
-      )}\n-# ${categoryLabel} · ${nowTimestamp()}`
-    )
-  )
-  container.addSeparatorComponents(buildDivider())
+  const kindIcon =
+    activity.kind === 'join'
+      ? '🟢'
+      : activity.kind === 'leave'
+      ? '🔴'
+      : activity.kind === 'move'
+      ? '🔄'
+      : '🎙️'
 
-  const infoText = new TextDisplayBuilder().setContent(
-    `### 활동 내역\n${description}\n\n멤버: <@${activity.memberId}> (${activity.memberTag})\n채널: ${channelText}`
-  )
+  const lines = [
+    `### ${kindIcon} 음성 활동: ${activityKindLabel(
+      activity.kind
+    )} · ${nowTimestamp()}`,
+    `**멤버:** <@${activity.memberId}> (${activity.memberTag})`,
+    `**채널:** ${channelText}`,
+    `**내역:** ${description}`,
+  ]
+
+  const infoText = new TextDisplayBuilder().setContent(lines.join('\n'))
 
   if (memberAvatar !== null) {
     const section = new SectionBuilder()
@@ -275,41 +254,36 @@ export function buildMessageLogMessage(
   guild: Guild | undefined,
   client: Client | undefined
 ): ContainerBuilder {
-  const categoryLabel = categoryLabelFor(category)
-  const title = messageActivityTitle(activity)
+  const isEdit = activity.kind === 'edit'
+  const icon = isEdit ? '✏️' : '🗑️'
+  const actionName = isEdit ? '메시지 수정' : '메시지 삭제'
   const channelRef =
     guild !== undefined ? `<#${activity.channelId}>` : activity.channelId
   const authorAvatar = resolveUserAvatar(guild, activity.authorId)
   const footerText = formatFooter(client)
 
-  const container = new ContainerBuilder()
-    .setAccentColor(CATEGORY_COLORS[category])
-    .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(
-        `# ${title}\n-# ${categoryLabel} · ${nowTimestamp()}`
-      )
-    )
-    .addSeparatorComponents(buildDivider())
+  const container = new ContainerBuilder().setAccentColor(
+    CATEGORY_COLORS[category]
+  )
 
   const authorLine =
     activity.authorId !== null
-      ? `<@${activity.authorId}>${
-          activity.authorTag !== null ? ` (${activity.authorTag})` : ''
-        }`
-      : '알 수 없음 (캐시되지 않은 메시지)'
+      ? `<@${activity.authorId}> (${activity.authorTag ?? '알 수 없음'})`
+      : '알 수 없음'
 
-  const authorLabel =
-    activity.authorIsBot === true ? `${authorLine} · 봇` : authorLine
-  const headerLines = [`채널: ${channelRef}`, `작성자: ${authorLabel}`]
+  const lines = [
+    `### ${icon} ${actionName} · ${channelRef} · ${nowTimestamp()}`,
+    `**작성자:** ${authorLine}${activity.authorIsBot === true ? ' · 봇' : ''}`,
+  ]
 
   if (activity.createdTimestamp !== null) {
     const seconds = Math.floor(activity.createdTimestamp / 1000)
-    headerLines.push(`작성 시각: <t:${seconds}:f> (<t:${seconds}:R>)`)
+    lines.push(`**작성 시각:** <t:${seconds}:f> (<t:${seconds}:R>)`)
   }
 
-  if (activity.kind === 'edit' && guild !== undefined) {
-    headerLines.push(
-      `메시지: [바로가기](${messageJumpLink(
+  if (isEdit && guild !== undefined) {
+    lines.push(
+      `**바로가기:** [메시지로 이동](${messageJumpLink(
         guild.id,
         activity.channelId,
         activity.messageId
@@ -317,9 +291,49 @@ export function buildMessageLogMessage(
     )
   }
 
-  const infoText = new TextDisplayBuilder().setContent(
-    `### 메시지 정보\n${headerLines.join('\n')}`
-  )
+  if (!isEdit && activity.deleterId !== null) {
+    lines.push(
+      `**삭제자:** <@${activity.deleterId}> (${
+        activity.deleterTag ?? '알 수 없음'
+      })`
+    )
+  }
+
+  if (isEdit) {
+    const contentChanged = activity.oldContent !== activity.newContent
+    if (contentChanged) {
+      const oldForDiff =
+        activity.oldContent === null && activity.contentUnavailable
+          ? '(캐시되지 않은 메시지 — 수정 전 내용 알 수 없음)'
+          : activity.oldContent
+      lines.push(`\n${formatMessageDiff(oldForDiff, activity.newContent)}`)
+    }
+    if (activity.attachments.length > 0) {
+      lines.push(
+        `\n**제거된 첨부 (${
+          activity.attachments.length
+        }개):**\n${formatAttachmentLines(activity.attachments)}`
+      )
+    }
+  } else {
+    const deletedContent =
+      activity.oldContent === null && activity.contentUnavailable
+        ? '*(캐시되지 않은 메시지라 내용을 확인할 수 없어요)*'
+        : formatMessageContent(activity.oldContent)
+    lines.push(`\n**삭제된 내용:**\n${deletedContent}`)
+    if (activity.attachments.length > 0) {
+      lines.push(
+        `\n**첨부 파일 (${
+          activity.attachments.length
+        }개):**\n${formatAttachmentLines(activity.attachments)}`
+      )
+    }
+    if (activity.stickerNames.length > 0) {
+      lines.push(`**스티커:** ${activity.stickerNames.join(', ')}`)
+    }
+  }
+
+  const infoText = new TextDisplayBuilder().setContent(lines.join('\n'))
 
   if (authorAvatar !== null) {
     const section = new SectionBuilder()
@@ -330,85 +344,11 @@ export function buildMessageLogMessage(
     container.addTextDisplayComponents(infoText)
   }
 
-  if (activity.kind === 'edit') {
-    const contentChanged = activity.oldContent !== activity.newContent
-    if (contentChanged) {
-      const oldForDiff =
-        activity.oldContent === null && activity.contentUnavailable
-          ? '(캐시되지 않은 메시지 — 수정 전 내용 알 수 없음)'
-          : activity.oldContent
-      container
-        .addSeparatorComponents(buildDivider())
-        .addTextDisplayComponents(
-          new TextDisplayBuilder().setContent(
-            `### 내용 변화\n${formatMessageDiff(
-              oldForDiff,
-              activity.newContent
-            )}`
-          )
-        )
-    }
-
-    if (activity.attachments.length > 0) {
-      container
-        .addSeparatorComponents(buildDivider())
-        .addTextDisplayComponents(
-          new TextDisplayBuilder().setContent(
-            `### 제거된 첨부 (${
-              activity.attachments.length
-            }개)\n${formatAttachmentLines(activity.attachments)}`
-          )
-        )
-    }
-  } else if (activity.kind === 'delete') {
-    const deleterLine =
-      activity.deleterId !== null
-        ? `<@${activity.deleterId}>${
-            activity.deleterTag !== null ? ` (${activity.deleterTag})` : ''
-          }`
-        : '-# 알 수 없음 (본인 삭제 또는 감사 로그 미확보)'
-
-    const deletedContent =
-      activity.oldContent === null && activity.contentUnavailable
-        ? '*(캐시되지 않은 메시지라 내용을 확인할 수 없어요)*'
-        : formatMessageContent(activity.oldContent)
-
-    container
-      .addSeparatorComponents(buildDivider())
-      .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(
-          `### 삭제된 내용\n${deletedContent}`
-        )
-      )
-
-    if (activity.attachments.length > 0) {
-      container.addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(
-          `**첨부 파일 (${
-            activity.attachments.length
-          }개)**\n${formatAttachmentLines(
-            activity.attachments
-          )}\n-# 첨부 링크는 시간이 지나면 만료될 수 있어요.`
-        )
-      )
-    }
-
-    if (activity.stickerNames.length > 0) {
-      container.addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(
-          `**스티커**: ${activity.stickerNames.join(', ')}`
-        )
-      )
-    }
-
-    container
-      .addSeparatorComponents(buildDivider())
-      .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(`### 삭제자\n${deleterLine}`)
-      )
-  }
-
-  appendFooter(container, footerText, `Message ID: ${activity.messageId}`)
+  appendFooter(
+    container,
+    footerText,
+    `Channel ID: ${activity.channelId} · Message ID: ${activity.messageId}`
+  )
 
   return container
 }
@@ -432,32 +372,25 @@ export function buildBulkDeleteLogMessage(
   client: Client | undefined,
   transcriptFileName: string | null
 ): ContainerBuilder {
-  const categoryLabel = categoryLabelFor(category)
   const channelRef =
     guild !== undefined ? `<#${details.channelId}>` : details.channelId
   const footerText = formatFooter(client)
 
-  const container = new ContainerBuilder()
-    .setAccentColor(CATEGORY_COLORS[category])
-    .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(
-        `# 메시지 일괄 삭제\n-# ${categoryLabel} · ${nowTimestamp()}`
-      )
-    )
-    .addSeparatorComponents(buildDivider())
+  const container = new ContainerBuilder().setAccentColor(
+    CATEGORY_COLORS[category]
+  )
 
-  const infoLines = [`채널: ${channelRef}`, `삭제된 메시지: ${details.count}개`]
+  const lines = [
+    `### 🧹 메시지 일괄 삭제 (${
+      details.count
+    }개) · ${channelRef} · ${nowTimestamp()}`,
+  ]
+
   if (details.uncachedCount > 0) {
-    infoLines.push(
+    lines.push(
       `-# 이 중 ${details.uncachedCount}개는 캐시에 없어 내용을 확보하지 못했어요.`
     )
   }
-
-  container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(
-      `### 삭제 정보\n${infoLines.join('\n')}`
-    )
-  )
 
   if (details.authorCounts.length > 0) {
     const breakdown = details.authorCounts
@@ -473,24 +406,17 @@ export function buildBulkDeleteLogMessage(
         `-# 외 ${details.authorCounts.length - MAX_AUTHOR_BREAKDOWN}명`
       )
     }
-    container
-      .addSeparatorComponents(buildDivider())
-      .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(
-          `### 작성자별 분포\n${breakdown.join('\n')}`
-        )
-      )
+    lines.push(`\n**작성자별 분포:**\n${breakdown.join('\n')}`)
   }
 
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(lines.join('\n'))
+  )
+
   if (transcriptFileName !== null) {
-    container
-      .addSeparatorComponents(buildDivider())
-      .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent('### 삭제된 메시지 기록')
-      )
-      .addFileComponents(
-        new FileBuilder().setURL(`attachment://${transcriptFileName}`)
-      )
+    container.addFileComponents(
+      new FileBuilder().setURL(`attachment://${transcriptFileName}`)
+    )
   }
 
   appendFooter(container, footerText, `Channel ID: ${details.channelId}`)
@@ -504,76 +430,60 @@ export function buildMemberLogMessage(
   guild: Guild | undefined,
   client: Client | undefined
 ): ContainerBuilder {
-  const categoryLabel = categoryLabelFor(category)
-  const title = activity.kind === 'join' ? '멤버 참가' : '멤버 퇴장'
+  const isJoin = activity.kind === 'join'
+  const icon = isJoin ? '📥' : '📤'
+  const title = isJoin ? '멤버 참가' : '멤버 퇴장'
   const memberAvatar = resolveUserAvatar(guild, activity.memberId)
   const footerText = formatFooter(client)
 
-  const container = new ContainerBuilder()
-    .setAccentColor(CATEGORY_COLORS[category])
-    .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(
-        `# ${title}\n-# ${categoryLabel} · ${nowTimestamp()}`
-      )
-    )
-    .addSeparatorComponents(buildDivider())
+  const container = new ContainerBuilder().setAccentColor(
+    CATEGORY_COLORS[category]
+  )
 
-  const memberLine = `멤버: <@${activity.memberId}> (${activity.memberTag})${
-    activity.isBot ? ' · 봇' : ''
-  }`
   const createdSeconds = Math.floor(activity.accountCreatedTimestamp / 1000)
-  const accountLine = `계정 생성: <t:${createdSeconds}:f> (<t:${createdSeconds}:R>)${
-    activity.isNewAccount ? ' · ⚠️ **신규 계정**' : ''
-  }`
+  const lines: string[] = [
+    `### ${icon} ${title} · ${nowTimestamp()}`,
+    `**멤버:** <@${activity.memberId}> (${activity.memberTag})${
+      activity.isBot ? ' · 봇' : ''
+    }`,
+    `**계정 생성:** <t:${createdSeconds}:f> (<t:${createdSeconds}:R>)${
+      activity.isNewAccount ? ' · ⚠️ **신규 계정**' : ''
+    }`,
+  ]
 
-  const infoLines: (string | null)[] = [memberLine, accountLine]
-
-  if (activity.kind === 'join') {
-    infoLines.push(
-      activity.memberCount !== null
-        ? `현재 인원: ${activity.memberCount}명`
-        : null
-    )
+  if (isJoin) {
+    if (activity.memberCount !== null) {
+      lines.push(`**현재 인원:** ${activity.memberCount}명`)
+    }
     if (activity.invite !== null) {
       const inviterPart =
         activity.invite.inviterId !== null
-          ? ` · 초대자 <@${activity.invite.inviterId}>${
-              activity.invite.inviterTag !== null
-                ? ` (${activity.invite.inviterTag})`
-                : ''
-            }`
+          ? ` (초대자: <@${activity.invite.inviterId}>)`
           : ''
-      infoLines.push(
-        activity.invite.isVanity
-          ? `초대 경로: 커스텀 URL (\`${activity.invite.code}\`)`
-          : `초대 경로: \`${activity.invite.code}\`${inviterPart}`
-      )
+      lines.push(`**초대 경로:** \`${activity.invite.code}\`${inviterPart}`)
     }
   } else {
     if (activity.joinedTimestamp !== null) {
       const joinedSeconds = Math.floor(activity.joinedTimestamp / 1000)
-      infoLines.push(
-        `서버 참가: <t:${joinedSeconds}:f> (<t:${joinedSeconds}:R>)`
+      lines.push(
+        `**서버 참가:** <t:${joinedSeconds}:f> (<t:${joinedSeconds}:R>)`
       )
     }
-    infoLines.push(
-      activity.stayDurationMs !== null
-        ? `머문 기간: ${formatStayDuration(activity.stayDurationMs)}`
-        : null
-    )
-    infoLines.push(
-      activity.memberCount !== null
-        ? `현재 인원: ${activity.memberCount}명`
-        : null
-    )
-    infoLines.push(formatRoleMentions(activity.roles))
+    if (activity.stayDurationMs !== null) {
+      lines.push(
+        `**머문 기간:** ${formatStayDuration(activity.stayDurationMs)}`
+      )
+    }
+    if (activity.memberCount !== null) {
+      lines.push(`**현재 인원:** ${activity.memberCount}명`)
+    }
+    const rolesText = formatRoleMentions(activity.roles)
+    if (rolesText) {
+      lines.push(rolesText)
+    }
   }
 
-  const infoText = new TextDisplayBuilder().setContent(
-    `### 멤버 정보\n${infoLines
-      .filter((line): line is string => line !== null)
-      .join('\n')}`
-  )
+  const infoText = new TextDisplayBuilder().setContent(lines.join('\n'))
 
   if (memberAvatar !== null) {
     const section = new SectionBuilder()
@@ -584,7 +494,7 @@ export function buildMemberLogMessage(
     container.addTextDisplayComponents(infoText)
   }
 
-  appendFooter(container, footerText, `Member ID: ${activity.memberId}`)
+  appendFooter(container, footerText, `User ID: ${activity.memberId}`)
 
   return container
 }
@@ -615,33 +525,33 @@ export function buildReactionLogMessage(
   guild: Guild | undefined,
   client: Client | undefined
 ): ContainerBuilder {
-  const categoryLabel = categoryLabelFor(category)
-  const title = activity.kind === 'add' ? '반응 추가' : '반응 제거'
+  const isAdd = activity.kind === 'add'
+  const icon = isAdd ? '✨' : '❌'
+  const title = isAdd ? '반응 추가' : '반응 제거'
   const channelRef =
     guild !== undefined ? `<#${activity.channelId}>` : activity.channelId
   const userAvatar = resolveUserAvatar(guild, activity.userId)
   const footerText = formatFooter(client)
   const messageRef =
     guild !== undefined
-      ? `[바로가기](${messageJumpLink(
+      ? `[메시지로 이동](${messageJumpLink(
           guild.id,
           activity.channelId,
           activity.messageId
         )})`
       : activity.messageId
 
-  const container = new ContainerBuilder()
-    .setAccentColor(CATEGORY_COLORS[category])
-    .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(
-        `# ${title}\n-# ${categoryLabel} · ${nowTimestamp()}`
-      )
-    )
-    .addSeparatorComponents(buildDivider())
-
-  const infoText = new TextDisplayBuilder().setContent(
-    `### 반응 정보\n사용자: <@${activity.userId}> (${activity.userTag})\n채널: ${channelRef}\n메시지: ${messageRef}\n이모지: ${activity.emoji}`
+  const container = new ContainerBuilder().setAccentColor(
+    CATEGORY_COLORS[category]
   )
+
+  const lines = [
+    `### ${icon} ${title} · ${channelRef} · ${nowTimestamp()}`,
+    `**사용자:** <@${activity.userId}> (${activity.userTag})`,
+    `**이모지:** ${activity.emoji} · **메시지:** ${messageRef}`,
+  ]
+
+  const infoText = new TextDisplayBuilder().setContent(lines.join('\n'))
 
   if (userAvatar !== null) {
     const section = new SectionBuilder()
@@ -663,7 +573,6 @@ export function buildReactionClearLogMessage(
   guild: Guild | undefined,
   client: Client | undefined
 ): ContainerBuilder {
-  const categoryLabel = categoryLabelFor(category)
   const title =
     activity.kind === 'clearAll' ? '반응 전체 제거' : '특정 이모지 반응 제거'
   const channelRef =
@@ -671,39 +580,36 @@ export function buildReactionClearLogMessage(
   const footerText = formatFooter(client)
   const messageRef =
     guild !== undefined
-      ? `[바로가기](${messageJumpLink(
+      ? `[메시지로 이동](${messageJumpLink(
           guild.id,
           activity.channelId,
           activity.messageId
         )})`
       : activity.messageId
 
-  const infoLines = [`채널: ${channelRef}`, `메시지: ${messageRef}`]
+  const lines = [
+    `### 🧹 ${title} · ${channelRef} · ${nowTimestamp()}`,
+    `**채널:** ${channelRef} · **메시지:** ${messageRef}`,
+  ]
+
   if (activity.kind === 'clearEmoji' && activity.emoji !== null) {
-    infoLines.push(
-      `이모지: ${activity.emoji}${
+    lines.push(
+      `**이모지:** ${activity.emoji}${
         activity.removedCount !== null
           ? ` (${activity.removedCount}개 제거)`
           : ''
       }`
     )
   } else if (activity.removedCount !== null) {
-    infoLines.push(`제거된 이모지 종류: ${activity.removedCount}종`)
+    lines.push(`**제거된 종류:** ${activity.removedCount}종`)
   }
 
-  const container = new ContainerBuilder()
-    .setAccentColor(CATEGORY_COLORS[category])
-    .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(
-        `# ${title}\n-# ${categoryLabel} · ${nowTimestamp()}`
-      )
-    )
-    .addSeparatorComponents(buildDivider())
-    .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(
-        `### 반응 정보\n${infoLines.join('\n')}`
-      )
-    )
+  const container = new ContainerBuilder().setAccentColor(
+    CATEGORY_COLORS[category]
+  )
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(lines.join('\n'))
+  )
 
   appendFooter(container, footerText, `Message ID: ${activity.messageId}`)
 
@@ -719,13 +625,7 @@ function messageJumpLink(
 }
 
 function nowTimestamp(): string {
-  return `<t:${Math.floor(Date.now() / 1000)}:F>`
-}
-
-function buildDivider(): SeparatorBuilder {
-  return new SeparatorBuilder()
-    .setDivider(true)
-    .setSpacing(SeparatorSpacingSize.Small)
+  return `<t:${Math.floor(Date.now() / 1000)}:R>`
 }
 
 function resolveUserAvatar(
@@ -758,13 +658,6 @@ function appendFooter(
   const line =
     footerText !== null ? `-# ${footerText} · ${fallback}` : `-# ${fallback}`
   container.addTextDisplayComponents(new TextDisplayBuilder().setContent(line))
-}
-
-function categoryLabelFor(category: ServerLogCategory): string {
-  return (
-    SERVER_LOG_CATEGORY_DEFINITIONS.find((item) => item.id === category)
-      ?.label ?? category
-  )
 }
 
 function formatExecutor(executorId: string | null): string {
@@ -890,15 +783,6 @@ function activityKindLabel(kind: VoiceActivity['kind']): string {
       return '카메라 켬'
     case 'videoStop':
       return '카메라 끔'
-  }
-}
-
-function messageActivityTitle(activity: MessageActivity): string {
-  switch (activity.kind) {
-    case 'edit':
-      return '메시지 수정'
-    case 'delete':
-      return activity.authorIsBot === true ? '봇 메시지 삭제' : '메시지 삭제'
   }
 }
 

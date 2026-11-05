@@ -3,6 +3,7 @@ import type {
   ToolDefinition,
   ToolExecutionContext,
 } from '../tools/toolTypes'
+import { type Client, PermissionFlagsBits } from 'discord.js'
 
 /**
  * Layer 3: Execution Gate Check
@@ -53,4 +54,43 @@ export function checkToolPermissionLayer3(
   }
 
   return { ok: true }
+}
+
+/** 실행 시점의 요청자 권한을 서버에서 새로 받아 확인한다. 승인자의 권한과는 별개다. */
+export async function checkLiveToolPermission(
+  client: Client,
+  definition: ToolDefinition,
+  args: Record<string, unknown>,
+  context: ToolExecutionContext
+): Promise<PermissionCheckResult> {
+  if (!context.guildId) {
+    if (definition.declaration.name === 'save_memory') {
+      return checkToolPermissionLayer3(definition, args, context, false, false)
+    }
+    return {
+      ok: false,
+      reason: '개인 메시지에서는 서버 도구를 사용할 수 없어요.',
+    }
+  }
+  const guild = client.guilds.cache.get(context.guildId)
+  if (!guild) {
+    return { ok: false, reason: '요청한 서버를 찾을 수 없어요.' }
+  }
+  const [roles, member] = await Promise.all([
+    guild.roles.fetch().catch(() => null),
+    guild.members
+      .fetch({ user: context.userId, force: true })
+      .catch(() => null),
+  ])
+  if (!member || !roles) {
+    return { ok: false, reason: '요청자의 현재 서버 권한을 확인할 수 없어요.' }
+  }
+  return checkToolPermissionLayer3(
+    definition,
+    args,
+    context,
+    member.permissions.has(PermissionFlagsBits.ManageGuild),
+    member.permissions.has(PermissionFlagsBits.Administrator),
+    member.permissions.has(PermissionFlagsBits.ManageChannels)
+  )
 }

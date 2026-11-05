@@ -117,6 +117,7 @@ export function moveAllMembersTool(client: Client): ToolDefinition {
         const botMember = guild.members.me
         const result = newResult()
         for (const member of members) {
+          if (context.abortSignal?.aborted) break
           const reasonToSkip = canActOnMember(member, guild.ownerId, botMember)
           if (reasonToSkip !== null) {
             result.skipped += 1
@@ -133,14 +134,18 @@ export function moveAllMembersTool(client: Client): ToolDefinition {
           }
         }
 
-        const summary = `${result.moved}명 이동 완료 (건너뜀 ${result.skipped}, 실패 ${result.failed}).`
+        const interrupted = context.abortSignal?.aborted === true
+        const summary = interrupted
+          ? `요청이 중단되어 ${result.moved}명까지만 이동했어요 (건너뜀 ${result.skipped}, 실패 ${result.failed}).`
+          : `${result.moved}명 이동 완료 (건너뜀 ${result.skipped}, 실패 ${result.failed}).`
         return {
-          success: result.moved > 0,
+          success: !interrupted && result.moved > 0,
           message: summary,
           summary,
           data: {
             sourceChannelId,
             targetChannelId,
+            interrupted,
             ...result,
           },
         }
@@ -214,6 +219,7 @@ export function disconnectAllMembersTool(client: Client): ToolDefinition {
         const botMember = guild.members.me
         const result = newResult()
         for (const member of members) {
+          if (context.abortSignal?.aborted) break
           const reasonToSkip = canActOnMember(member, guild.ownerId, botMember)
           if (reasonToSkip !== null) {
             result.skipped += 1
@@ -230,13 +236,17 @@ export function disconnectAllMembersTool(client: Client): ToolDefinition {
           }
         }
 
-        const summary = `${result.moved}명 연결 해제 (건너뜀 ${result.skipped}, 실패 ${result.failed}).`
+        const interrupted = context.abortSignal?.aborted === true
+        const summary = interrupted
+          ? `요청이 중단되어 ${result.moved}명까지만 연결 해제했어요 (건너뜀 ${result.skipped}, 실패 ${result.failed}).`
+          : `${result.moved}명 연결 해제 (건너뜀 ${result.skipped}, 실패 ${result.failed}).`
         return {
-          success: result.moved > 0,
+          success: !interrupted && result.moved > 0,
           message: summary,
           summary,
           data: {
             channelId,
+            interrupted,
             ...result,
           },
         }

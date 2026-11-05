@@ -1,4 +1,3 @@
-import { MODERATION_GUILD_ID } from '../moderation/moderationConfig'
 import { AuditLogEvent } from 'discord.js'
 
 export const SERVER_LOG_CATEGORIES = [
@@ -12,7 +11,6 @@ export const SERVER_LOG_CATEGORIES = [
   'invites',
   'webhooks',
   'expressions',
-  'clantag',
   'automod',
 ] as const
 
@@ -65,11 +63,6 @@ export const SERVER_LOG_CATEGORY_DEFINITIONS: readonly ServerLogCategoryDefiniti
       description: '이모지 반응 추가/삭제, 스티커, 사운드보드 생성/수정/삭제',
     },
     {
-      id: 'clantag',
-      label: '서버 태그',
-      description: '서버 태그 적용/해제 감지',
-    },
-    {
       id: 'automod',
       label: '자동 검열',
       description: '금지어·초대링크·스팸·NSFW 등 자동 검열 조치',
@@ -79,9 +72,6 @@ export const SERVER_LOG_CATEGORY_DEFINITIONS: readonly ServerLogCategoryDefiniti
 const SERVER_LOG_CATEGORY_SET: ReadonlySet<string> = new Set(
   SERVER_LOG_CATEGORIES
 )
-
-const RESTRICTED_SERVER_LOG_CATEGORIES: ReadonlySet<ServerLogCategory> =
-  new Set(['clantag', 'automod'])
 
 const AUDIT_ACTION_CATEGORY: Readonly<
   Partial<Record<AuditLogEvent, ServerLogCategory>>
@@ -168,10 +158,7 @@ export function isServerLogCategory(value: string): value is ServerLogCategory {
 }
 
 export function getVisibleServerLogCategories(
-  guildId: string
+  _guildId?: string
 ): readonly ServerLogCategory[] {
-  if (guildId === MODERATION_GUILD_ID) return SERVER_LOG_CATEGORIES
-  return SERVER_LOG_CATEGORIES.filter(
-    (category) => !RESTRICTED_SERVER_LOG_CATEGORIES.has(category)
-  )
+  return SERVER_LOG_CATEGORIES
 }

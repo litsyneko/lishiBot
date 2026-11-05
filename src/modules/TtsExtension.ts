@@ -75,7 +75,10 @@ async function postControl(
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
     })
-    if (res.ok) return { ok: true }
+    if (res.ok) {
+      void res.body?.cancel().catch(() => undefined)
+      return { ok: true }
+    }
 
     // TTS 봇이 던진 구체적 실패 사유(권한 없음, 채널 없음 등)를 꺼내 전달.
     const errBody = (await res.json().catch(() => null)) as {
@@ -190,7 +193,10 @@ async function pollTtsHealth(client: Client): Promise<void> {
 
   try {
     const res = await healthFetch(`${base}/health`)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) {
+      void res.body?.cancel().catch(() => undefined)
+      throw new Error(`HTTP ${res.status}`)
+    }
 
     const raw = (await res.json()) as {
       sessions?: TtsSessionInfo[]

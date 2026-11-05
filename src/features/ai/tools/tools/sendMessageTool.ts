@@ -1,3 +1,4 @@
+import { resolveMessageChannelAccess } from '../helpers/messageChannelAccess'
 import type {
   ToolDefinition,
   ToolExecutionContext,
@@ -15,12 +16,6 @@ import {
   SeparatorSpacingSize,
   TextDisplayBuilder,
 } from 'discord.js'
-
-type ChannelLike = {
-  id: string
-  isTextBased: () => boolean
-  send: (options: Record<string, unknown>) => Promise<{ id: string }>
-}
 
 type Block =
   | { type: 'text'; content: string }
@@ -71,7 +66,8 @@ export function sendMessageTool(client: Client): ToolDefinition {
     ): Promise<ToolResult> {
       try {
         const channelId =
-          (args.channel_id as string | undefined)?.trim() || context.channelId
+          (typeof args.channel_id === 'string' && args.channel_id.trim()) ||
+          context.channelId
         const color = (args.color as string | undefined)?.trim()
         const rawBlocks = Array.isArray(args.blocks) ? args.blocks : []
 
@@ -133,20 +129,6 @@ export function sendMessageTool(client: Client): ToolDefinition {
 
         if (blocks.length === 0) {
           return { success: false, message: '유효한 블록이 없어요.' }
-        }
-
-        const channel = client.channels.cache.get(channelId) as
-          | ChannelLike
-          | undefined
-        if (channel === undefined) {
-          return { success: false, message: '채널을 찾을 수 없어요.' }
-        }
-
-        if (!channel.isTextBased()) {
-          return {
-            success: false,
-            message: '텍스트 채널에만 전송할 수 있어요.',
-          }
         }
 
         const container = new ContainerBuilder()
@@ -212,7 +194,21 @@ export function sendMessageTool(client: Client): ToolDefinition {
           }
         }
 
-        const sent = await channel.send({
+        const access = await resolveMessageChannelAccess(
+          client,
+          context,
+          channelId,
+          'send'
+        )
+        if (!access.ok) return { success: false, message: access.reason }
+        if (context.abortSignal?.aborted) {
+          return {
+            success: false,
+            message: '요청이 중단되어 전송하지 않았어요.',
+          }
+        }
+
+        const sent = await access.channel.send({
           components: [container],
           flags: MessageFlags.IsComponentsV2,
         })

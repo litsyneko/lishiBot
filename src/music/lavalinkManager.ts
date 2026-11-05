@@ -59,6 +59,8 @@ export function createLavalinkManager(
     playerOptions: {
       applyVolumeAsFilter: true,
       defaultSearchPlatform: 'ytsearch',
+      // Spotify 메타데이터(제목/아티스트/커버)를 유튜브 해석 후에도 유지
+      useUnresolvedData: true,
       onDisconnect: {
         autoReconnect: true,
       },

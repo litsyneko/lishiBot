@@ -1,5 +1,4 @@
 import { config } from '../config'
-import { MODERATION_GUILD_ID } from '../features/moderation/moderationConfig'
 import { loadSoundboardGuardSettings } from '../features/soundboard/soundboardGuardStore'
 import { logger } from '../utils/logger'
 import { getMusicManager } from './MusicExtension'
@@ -103,14 +102,15 @@ class HelloExtension extends Extension {
     let playingUploader: string | null = null
     try {
       const manager = getMusicManager()
-      const player = manager.players.get(MODERATION_GUILD_ID)
+      const activePlayer = [...manager.players.values()].find(
+        (p) => p.playing && p.queue.current?.info?.title !== undefined
+      )
       if (
-        player !== undefined &&
-        player.playing &&
-        player.queue.current?.info?.title !== undefined
+        activePlayer !== undefined &&
+        activePlayer.queue.current?.info?.title !== undefined
       ) {
-        playingTrack = player.queue.current.info.title
-        playingUploader = player.queue.current.info.author ?? null
+        playingTrack = activePlayer.queue.current.info.title
+        playingUploader = activePlayer.queue.current.info.author ?? null
       }
     } catch {
       void 0

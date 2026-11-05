@@ -43,6 +43,7 @@ export type ToolExecutionContext = {
   readonly guildName: string
   readonly userId: string
   readonly channelId: string
+  readonly abortSignal?: AbortSignal
 }
 
 // ─── Permission ───

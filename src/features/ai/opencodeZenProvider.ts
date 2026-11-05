@@ -14,12 +14,15 @@ export type OpencodeZenConfig = {
   readonly maxAttempts?: number
   // 시도 1회당 응답 타임아웃(ms). 미지정 시 60초.
   readonly requestTimeoutMs?: number
+  // 첫 바이트까지의 상한(ms). 미지정 시 비활성.
+  readonly firstByteTimeoutMs?: number
   // 생각(추론) 노력. 미지정 시 엔드포인트 기본값.
   readonly reasoningEffort?: string
   // 생성 온도. 미지정 시 SDK/엔드포인트 기본값(로컬은 호출부에서 0.2 지정).
   readonly temperature?: number
   // 컨텍스트 예산(토큰). 히스토리를 이 안에 맞춰 넣는다.
   readonly contextTokens?: number
+  readonly supportsImages?: boolean
 }
 
 const OPENCODE_ZEN_BASE_URL = 'https://opencode.ai/zen/v1'
@@ -47,12 +50,14 @@ export function createOpencodeZenProvider(
       label,
       maxAttempts: config.maxAttempts,
       requestTimeoutMs: config.requestTimeoutMs,
+      firstByteTimeoutMs: config.firstByteTimeoutMs,
     }),
   })
   const model = provider(config.model)
 
   return {
     label,
+    supportsImages: config.supportsImages === true,
     generate: async (prompt, history, options) =>
       runGenerate({
         model,

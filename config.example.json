@@ -1,5 +1,6 @@
 {
   "token": "YOUR_DISCORD_BOT_TOKEN",
+  "serxngUrl": "http://localhost:8888/search",
   "guilds": ["YOUR_TEST_GUILD_ID"],
   "clientId": "YOUR_BOT_APPLICATION_ID",
   "lavalink": {
@@ -38,8 +39,5 @@
     "apiKey": "YOUR_ELEVENLABS_API_KEY",
     "voiceId": "YOUR_ELEVENLABS_VOICE_ID",
     "modelId": "eleven_v3"
-  },
-  "economy": {
-    "databasePath": "./data/economy.db"
   }
 }

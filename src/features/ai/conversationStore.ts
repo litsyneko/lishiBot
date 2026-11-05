@@ -2,6 +2,7 @@ import { logger } from '../../utils/logger'
 import type { ChatMessage } from './aiPolicy'
 import type { ToolRecord } from './aiPolicy'
 import { getSupabase } from './supabase'
+import { isChannelBusy, isSessionBusy } from './turnRegistry'
 
 const SESSION_TTL_MS = 3 * 24 * 60 * 60 * 1000
 // 세션당 대화 저장 상한. 프롬프트에 넣을 때는 providerCore가 컨텍스트 예산(토큰)으로
@@ -619,8 +620,9 @@ async function clearUserSession(
   guildId: string,
   channelId: string,
   userId: string
-): Promise<boolean> {
+): Promise<boolean | undefined> {
   const sessionKey = `${guildId}:${channelId}:${userId}`
+  if (isSessionBusy(sessionKey)) return undefined
   if (!sessions.has(sessionKey)) return false
   deleteSession(sessionKey)
   await persistChains.get(sessionKey)
@@ -630,7 +632,8 @@ async function clearUserSession(
 async function clearSessionsForChannel(
   guildId: string,
   channelId: string
-): Promise<number> {
+): Promise<number | undefined> {
+  if (isChannelBusy(guildId, channelId)) return undefined
   let count = 0
   const pending: Promise<void>[] = []
   const prefix = `${guildId}:${channelId}:`

@@ -129,7 +129,6 @@ class SoundboardGuardExtensionClass extends Extension {
 
           const alertMsg: Message<true> = await voiceChannel.send({
             content: `<@${member.id}>님, 사운드보드를 너무 빠르게 많이 사용하셨어요! 다른 분들이 불편할 수 있으니 조금만 천천히 사용해주세요\n지금부터 **30초간** 사운드보드 사용이 제한됩니다.\n-# 제한은 30초 후 자동으로 해제돼요. 이 메시지도 함께 사라져요.`,
-            stickers: ['1520216939665035414'],
           })
 
           setTimeout(() => {

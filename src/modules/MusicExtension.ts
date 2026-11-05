@@ -1,5 +1,6 @@
 import { createMusicSettingsService } from '../features/music/musicSettings'
 import { createAudioService } from '../music/audioService'
+import { MUSIC_PLATFORMS } from '../music/musicService'
 import type { CustomPlayer } from '../music/customPlayer'
 import {
   type RepeatMode,
@@ -124,7 +125,18 @@ class MusicExtensionClass extends Extension {
       required: true,
       autocomplete: true,
     })
-    query: string
+    query: string,
+    @option({
+      type: ApplicationCommandOptionType.String,
+      name: '플랫폼',
+      description: '검색 플랫폼 (기본: 유튜브)',
+      required: false,
+      choices: MUSIC_PLATFORMS.map((p) => ({
+        name: p.label,
+        value: p.name,
+      })),
+    })
+    platform?: string
   ) {
     try {
       const guildId = requireGuild(i)
@@ -142,7 +154,7 @@ class MusicExtensionClass extends Extension {
         voiceChannelId,
         textChannelId
       )
-      const result = await audio.search(player, query, i.user)
+      const result = await audio.search(player, query, i.user, platform)
       await audio.connectPlayer(player, i)
 
       if (result.loadType === 'playlist') {

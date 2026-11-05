@@ -64,6 +64,7 @@ import {
   setRolePermissionsTool,
 } from './tools/roleManageTools'
 import { listRolesTool, lookupRoleTool } from './tools/roleTools'
+import { webSearchTool } from './tools/searchTool'
 import { sendMessageTool } from './tools/sendMessageTool'
 import { sendStickerTool } from './tools/sendStickerTool'
 import { getServerInfoTool } from './tools/serverTools'
@@ -135,6 +136,7 @@ export function createToolRegistry(client: Client): ToolRegistry {
   register(reactMessageTool(client))
   register(searchMessagesTool(client))
   register(saveMemoryTool)
+  register(webSearchTool)
   register(playMusicTool(client))
   register(stopMusicTool(client))
   register(pauseMusicTool(client))

@@ -564,7 +564,10 @@ export function formatMessageContent(content: string | null): string {
     content.length > MAX_CONTENT_LENGTH
       ? content.slice(0, MAX_CONTENT_LENGTH) + '…'
       : content
-  return `\`\`\`\n${trimmed}\n\`\`\``
+  return trimmed
+    .split('\n')
+    .map((line) => `> ${line}`)
+    .join('\n')
 }
 
 export function formatMessageDiff(
@@ -583,9 +586,16 @@ export function formatMessageDiff(
       ? newText.slice(0, MAX_DIFF_LENGTH) + '…'
       : newText
 
-  return `**수정 전**\n\`\`\`\n${
-    oldBlock || '(내용 없음)'
-  }\n\`\`\`\n**수정 후**\n\`\`\`\n${newBlock || '(내용 없음)'}\n\`\`\``
+  const oldFormatted = (oldBlock || '(내용 없음)')
+    .split('\n')
+    .map((l) => `> ${l}`)
+    .join('\n')
+  const newFormatted = (newBlock || '(내용 없음)')
+    .split('\n')
+    .map((l) => `> ${l}`)
+    .join('\n')
+
+  return `**수정 전:**\n${oldFormatted}\n**수정 후:**\n${newFormatted}`
 }
 
 export type MemberActivity = {

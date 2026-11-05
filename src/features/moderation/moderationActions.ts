@@ -10,7 +10,7 @@ import {
 } from 'discord.js'
 
 const SPAM_DELETE_WINDOW_MS = 20_000
-const WARNING_EMOJI = '<:kawaiicaution:1521755658792206366>'
+const WARNING_EMOJI = '⚠️'
 
 export function isImmune(
   member: GuildMember,
@@ -141,17 +141,14 @@ async function sendChannelNotice(
   if (!('send' in channel)) return
 
   try {
+    const actionDesc = timedOut ? '메시지 삭제 및 타임아웃' : '메시지 삭제'
     const sent = await channel.send({
       allowedMentions: { users: [message.author.id] },
-      content: `<@${message.author.id}>`,
-      embeds: [buildNoticeEmbed(result, timedOut)],
+      content: `⚠️ <@${message.author.id}>님, 규정 위반(${result.reason})으로 ${actionDesc} 조치되었어요.`,
     })
-    setTimeout(
-      () => {
-        sent.delete().catch(() => undefined)
-      },
-      timedOut ? severityTimeoutMs(result.severity) : 10_000
-    )
+    setTimeout(() => {
+      sent.delete().catch(() => undefined)
+    }, 4_000)
   } catch (err) {
     logger.debug(
       'Moderation',

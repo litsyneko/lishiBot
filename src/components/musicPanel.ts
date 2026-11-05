@@ -39,10 +39,6 @@ export type MusicPanelMessage = {
 
 const SPOTIFY_GREEN = 0x1db954
 
-function escapeMarkdown(text: string): string {
-  return text.replace(/([\\[\]*_~`>|])/gu, '\\$1')
-}
-
 function resolveThumbnail(track: PanelTrackInfo): string | undefined {
   if (track.artworkUrl !== undefined && track.artworkUrl.length > 0) {
     return track.artworkUrl
@@ -143,8 +139,8 @@ function buildNowplayingSection(
   }> 에서 ${player.paused ? '일시 정지' : '재생'} 중`
   const titleLine =
     trackInfo.uri !== undefined && trackInfo.uri.length > 0
-      ? `### [${escapeMarkdown(trackInfo.title)}](${trackInfo.uri})`
-      : `### ${escapeMarkdown(trackInfo.title)}`
+      ? `### [${trackInfo.title}](${trackInfo.uri})`
+      : `### ${trackInfo.title}`
   const artistLine = `**${trackInfo.author ?? '알 수 없음'}**`
   const progressLine = buildProgressBar(
     player.position,
@@ -230,8 +226,8 @@ function buildQueueSection(
       const dur = formatDuration(t.info.duration ?? 0)
       const title =
         t.info.uri !== undefined && t.info.uri.length > 0
-          ? `[${escapeMarkdown(t.info.title)}](${t.info.uri})`
-          : escapeMarkdown(t.info.title)
+          ? `[${t.info.title}](${t.info.uri})`
+          : t.info.title
       return `\`\`#${displayIdx}\`\` ${title} \`${dur}\``
     })
     .join('\n')
@@ -245,7 +241,7 @@ function buildQueueSection(
 
   const selectMenu = new StringSelectMenuBuilder()
     .setCustomId(`${PREFIX}qsel`)
-    .setPlaceholder('곡을 선택하세요')
+    .setPlaceholder('곡을 선택한 뒤 아래 [재생] 또는 [삭제]를 누르세요')
     .addOptions(
       pageTracks.map((track, idx) => {
         const t = track as Track
@@ -270,21 +266,25 @@ function buildQueueSection(
     new ButtonBuilder()
       .setCustomId(`${PREFIX}qprev`)
       .setEmoji('◀️')
+      .setLabel('이전')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page <= 1),
     new ButtonBuilder()
       .setCustomId(`${PREFIX}qnext`)
       .setEmoji('▶️')
+      .setLabel('다음')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page >= totalPages),
     new ButtonBuilder()
       .setCustomId(`${PREFIX}qjump`)
-      .setStyle(ButtonStyle.Secondary)
-      .setEmoji('↪️'),
+      .setStyle(ButtonStyle.Primary)
+      .setEmoji('↪️')
+      .setLabel('선택 곡 재생'),
     new ButtonBuilder()
       .setCustomId(`${PREFIX}qrm`)
       .setStyle(ButtonStyle.Danger)
       .setEmoji('🗑️')
+      .setLabel('선택 곡 삭제')
   )
   container.addActionRowComponents(queueActionRow)
 }
@@ -301,49 +301,61 @@ function buildPlaybackTab(
 
   const repeatEmoji =
     repeatMode === 'track' ? '🔂' : repeatMode === 'queue' ? '🔁' : '🔁'
+  const repeatLabel =
+    repeatMode === 'track'
+      ? '반복: 한곡'
+      : repeatMode === 'queue'
+      ? '반복: 전체'
+      : '반복: 끔'
+
+  const queueCount = player.queue.tracks.length
 
   const controlRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId(`${PREFIX}prev`)
       .setStyle(ButtonStyle.Secondary)
-      .setEmoji(EMOJI_BTN_LEFT),
+      .setEmoji(EMOJI_BTN_LEFT)
+      .setLabel('이전'),
     new ButtonBuilder()
       .setCustomId(`${PREFIX}pause`)
       .setStyle(player.paused ? ButtonStyle.Success : ButtonStyle.Primary)
-      .setEmoji(player.paused ? '▶️' : '⏸️'),
+      .setEmoji(player.paused ? '▶️' : '⏸️')
+      .setLabel(player.paused ? '재생' : '일시정지'),
     new ButtonBuilder()
       .setCustomId(`${PREFIX}skip`)
       .setStyle(ButtonStyle.Secondary)
-      .setEmoji(EMOJI_BTN_RIGHT),
+      .setEmoji(EMOJI_BTN_RIGHT)
+      .setLabel('스킵'),
+    new ButtonBuilder()
+      .setCustomId(`${PREFIX}stop`)
+      .setStyle(ButtonStyle.Danger)
+      .setEmoji(EMOJI_BTN_STOP)
+      .setLabel('정지')
+  )
+
+  const utilRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId(`${PREFIX}repeat`)
       .setStyle(
         repeatMode !== 'off' ? ButtonStyle.Success : ButtonStyle.Secondary
       )
-      .setEmoji(repeatEmoji),
+      .setEmoji(repeatEmoji)
+      .setLabel(repeatLabel),
     new ButtonBuilder()
       .setCustomId(`${PREFIX}shuffle`)
       .setStyle(ButtonStyle.Secondary)
       .setEmoji('🔀')
-  )
-
-  const utilRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`${PREFIX}stop`)
-      .setStyle(ButtonStyle.Danger)
-      .setEmoji(EMOJI_BTN_STOP),
+      .setLabel('셔플'),
     new ButtonBuilder()
       .setCustomId(`${PREFIX}queueToggle`)
       .setStyle(queueOpen ? ButtonStyle.Success : ButtonStyle.Secondary)
-      .setEmoji('📜'),
+      .setEmoji('📜')
+      .setLabel(`대기열 (${queueCount})`),
     new ButtonBuilder()
       .setCustomId(`${PREFIX}tabSettings`)
       .setStyle(ButtonStyle.Secondary)
-      .setEmoji('⚙️'),
-    new ButtonBuilder()
-      .setCustomId(`${PREFIX}refresh`)
-      .setStyle(ButtonStyle.Secondary)
-      .setEmoji(EMOJI_REFRESH)
+      .setEmoji(volumeToEmoji(player.volume))
+      .setLabel(`볼륨 ${player.volume}%`)
   )
 
   container
@@ -370,7 +382,7 @@ function buildSettingsTab(
   const volume = player.volume
 
   const volumeText = new TextDisplayBuilder().setContent(
-    `### ⚙️ 설정\n${volumeToEmoji(volume)} 볼륨: **${volume}%**`
+    `### ${volumeToEmoji(volume)} 볼륨 조절 (**${volume}%**)`
   )
 
   container
@@ -384,23 +396,24 @@ function buildSettingsTab(
   const volRow1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId(`${PREFIX}volDown10`)
-      .setLabel('-10')
+      .setLabel('-10%')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId(`${PREFIX}volDown5`)
-      .setLabel('-5')
+      .setLabel('-5%')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId(`${PREFIX}volMute`)
       .setStyle(volume === 0 ? ButtonStyle.Danger : ButtonStyle.Secondary)
-      .setEmoji('🔇'),
+      .setEmoji('🔇')
+      .setLabel(volume === 0 ? '음소거 해제' : '음소거'),
     new ButtonBuilder()
       .setCustomId(`${PREFIX}volUp5`)
-      .setLabel('+5')
+      .setLabel('+5%')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId(`${PREFIX}volUp10`)
-      .setLabel('+10')
+      .setLabel('+10%')
       .setStyle(ButtonStyle.Secondary)
   )
 
@@ -408,11 +421,8 @@ function buildSettingsTab(
     new ButtonBuilder()
       .setCustomId(`${PREFIX}tabPlayback`)
       .setStyle(ButtonStyle.Primary)
-      .setEmoji(EMOJI_BTN_LEFT),
-    new ButtonBuilder()
-      .setCustomId(`${PREFIX}refresh`)
-      .setStyle(ButtonStyle.Secondary)
-      .setEmoji(EMOJI_REFRESH)
+      .setEmoji(EMOJI_BTN_LEFT)
+      .setLabel('재생 컨트롤로 돌아가기')
   )
 
   container.addActionRowComponents(volRow1).addActionRowComponents(volRow2)
@@ -470,8 +480,8 @@ export function buildTrackAdded(input: AddedToQueueInput): MusicPanelMessage {
     : `<a:Lishi_07:1521143128025731263> 대기열에 추가했어요.`
   const titleLine =
     track.uri !== undefined && track.uri.length > 0
-      ? `### [${escapeMarkdown(track.title)}](${track.uri})`
-      : `### ${escapeMarkdown(track.title)}`
+      ? `### [${track.title}](${track.uri})`
+      : `### ${track.title}`
   const artistLine = `**${track.author}**`
   const positionLine =
     !isPlaying && queuePosition !== undefined
@@ -507,28 +517,32 @@ export type PlaylistQueuedInput = {
   readonly playlistName: string
   readonly trackCount: number
   readonly firstTrack: PanelTrackInfo
+  readonly playlistArtworkUrl?: string
 }
 
 export function buildPlaylistQueued(
   input: PlaylistQueuedInput
 ): MusicPanelMessage {
-  const { playlistName, trackCount, firstTrack } = input
+  const { playlistName, trackCount, firstTrack, playlistArtworkUrl } = input
 
   const header = `### 📝 플레이리스트를 추가했어요`
   const body = `**${playlistName}**\n${trackCount}곡을 대기열에 추가했어요.`
   const firstLine =
     firstTrack.uri !== undefined && firstTrack.uri.length > 0
-      ? `-# 첫 곡: [${escapeMarkdown(firstTrack.title)}](${firstTrack.uri}) — ${
+      ? `-# 첫 곡: [${firstTrack.title}](${firstTrack.uri}) — ${
           firstTrack.author
         }`
-      : `-# 첫 곡: ${escapeMarkdown(firstTrack.title)} — ${firstTrack.author}`
+      : `-# 첫 곡: ${firstTrack.title} — ${firstTrack.author}`
 
   const content = [header, body, firstLine].join('\n')
 
   const textDisplay = new TextDisplayBuilder().setContent(content)
   const container = new ContainerBuilder().setAccentColor(SPOTIFY_GREEN)
 
-  const thumbnailUrl = resolveThumbnail(firstTrack)
+  const thumbnailUrl =
+    playlistArtworkUrl !== undefined && playlistArtworkUrl.length > 0
+      ? playlistArtworkUrl
+      : resolveThumbnail(firstTrack)
   if (thumbnailUrl !== undefined) {
     const section = new SectionBuilder()
       .addTextDisplayComponents(textDisplay)
@@ -560,8 +574,8 @@ export function buildStoppedPanel(input: StoppedPanelInput): MusicPanelMessage {
   if (input.track !== undefined) {
     const titleLine =
       input.track.uri !== undefined && input.track.uri.length > 0
-        ? `### [${escapeMarkdown(input.track.title)}](${input.track.uri})`
-        : `### ${escapeMarkdown(input.track.title)}`
+        ? `### [${input.track.title}](${input.track.uri})`
+        : `### ${input.track.title}`
     const artistLine = `**${input.track.author}**`
     textParts.push(titleLine, artistLine)
   }

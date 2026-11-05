@@ -401,19 +401,17 @@ export function prepareTtsText(
   text = text.replace(/ㅇㄷ/gu, ' 어디 ')
   text = text.replace(/ㅎㄹ/gu, ' 헐 ')
 
-  text = text.replace(/ㅋ{4,}/gu, ' [laughs harder] ')
-  text = text.replace(/ㅋ{2,3}/gu, ' [laughs] 크크 ')
-  text = text.replace(/ㅋ/gu, ' [chuckles] ')
-  text = text.replace(/ㅎ{2,}/gu, ' [chuckles] ')
-  text = text.replace(/(?:흑흑|엉엉|잉잉)/gu, ' [crying] 엉엉 ')
-  text = text.replace(/[ㅠㅜ]{2,}/gu, ' [crying] ')
-  text = text.replace(/(?:에휴|어휴|에효)/gu, ' [sighs] 에휴 ')
-  text = text.replace(/(?:^|\s)[하휴]\.{2,}/gu, ' [sighs] ')
+  text = text.replace(/ㅋ{4,}/gu, ' ㅋㅋㅋ ')
+  text = text.replace(/ㅋ{2,3}/gu, ' 크크 ')
+  text = text.replace(/ㅋ/gu, ' 큭 ')
+  text = text.replace(/ㅎ{2,}/gu, ' 하하 ')
+  text = text.replace(/(?:흑흑|엉엉|잉잉)/gu, ' 엉엉 ')
+  text = text.replace(/[ㅠㅜ]{2,}/gu, ' 훌쩍 ')
+  text = text.replace(/(?:에휴|어휴|에효)/gu, ' 에휴 ')
+  text = text.replace(/(?:^|\s)[하휴]\.{2,}/gu, ' 휴 ')
 
-  // 느낌표 3연타 이상 → 신나는 톤으로 연기 (!!는 일상 강조라 제외)
-  if (/!{3,}/u.test(text)) {
-    text = `[excited] ${text.replace(/!{2,}/gu, '!')}`
-  }
+  // 남은 대괄호 영문 태그 제거 (VOICEVOX 발음 정돈)
+  text = text.replace(/\[[a-zA-Z\s]+\]/gu, ' ')
 
   // 변환되지 않고 남은 자모 조각(ㅅㅂ, ㅇㅅㅇ, 낱자 등)은 그대로는
   // 발음할 수 없으므로 자음/모음 이름으로 풀어 읽는다. (ㅁㄴㄴㅇㄹ → 미음 니은 …)

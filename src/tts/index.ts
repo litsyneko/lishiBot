@@ -1,12 +1,6 @@
 import { config } from '../config'
 import { logger } from '../utils/logger'
 import { startControlServer } from './controlServer'
-import {
-  isElevenLabsConfigured,
-  isTtsDisabled,
-  setExpirationHandler,
-  synthesizeSpeech,
-} from './elevenLabs'
 import { mixSpeechWithBackground } from './ttsMix'
 import {
   clearSession,
@@ -27,11 +21,15 @@ import {
   isConnected,
   joinGuildVoice,
   leaveGuildVoice,
-  scheduleLeaveWhenDrained,
   setForcedDisconnectHandler,
 } from './ttsVoice'
 import { getUserVoiceId, loadUserVoices, setUserVoice } from './ttsVoiceStore'
 import { isKnownVoiceId, voiceLabel } from './ttsVoices'
+import {
+  isTtsDisabled,
+  setExpirationHandler,
+  synthesizeSpeech,
+} from './voicevox'
 import {
   ChannelType,
   Client,
@@ -51,14 +49,8 @@ const BOOT_TIME = Date.now()
 const ttsConfig = config.tts
 
 // 19금·쌍욕(high 등급) 메시지 대신 읽는 검열 멘트. 매번 같은 문구라 오디오를 캐시한다.
-const CENSOR_LINE = '[mischievously] 삐— 삐— 삐— 그런 건 못 읽어요!'
+const CENSOR_LINE = '삐— 삐— 삐— 그런 건 못 읽어요!'
 let censorAudioCache: Buffer | null = null
-
-// API 만료 시 음성채널에서 읽어줄 안내 멘트. 만료 후엔 합성이 불가능하므로
-// 키가 살아있는 부팅 시점에 미리 합성해 저장해 둔다(선 저장 → 만료 시 재생).
-const EXPIRY_NOTICE_LINE =
-  'api 만료가 되어 TTS 기능을 비활성화 되었습니다. 이 문제는 관리자에게 문의를 해주세요!'
-let expiryNoticeCache: Buffer | null = null
 
 const client = new Client({
   intents: [
@@ -70,29 +62,12 @@ const client = new Client({
 })
 
 client.on('clientReady', () => {
-  logger.info('TTS', `TTS 봇 로그인 완료: ${client.user?.tag}`)
-  if (!isElevenLabsConfigured()) {
-    logger.warn('TTS', 'ElevenLabs 미설정 - 음성 합성이 비활성화됩니다.')
-  }
+  logger.info(
+    'TTS',
+    `TTS 봇 로그인 완료: ${client.user?.tag} (로컬 VOICEVOX 최적화 모드)`
+  )
   void loadUserVoices()
-  void primeExpiryNotice()
 })
-
-// 만료 안내 음성을 부팅 시(키 유효할 때) 미리 합성해 캐시. 겸사겸사
-// 키 상태 헬스체크 역할도 한다.
-async function primeExpiryNotice(): Promise<void> {
-  if (!isElevenLabsConfigured()) return
-  const audio = await synthesizeSpeech(EXPIRY_NOTICE_LINE)
-  if (audio !== null) {
-    expiryNoticeCache = audio
-    logger.info('TTS', '만료 안내 음성 사전 합성 완료')
-  } else {
-    logger.warn(
-      'TTS',
-      '만료 안내 음성 사전 합성 실패 — 만료 시 음성 안내 없이 embed만 전송됩니다.'
-    )
-  }
-}
 
 client.on('messageCreate', async (message: Message) => {
   try {
@@ -272,41 +247,8 @@ setForcedDisconnectHandler((guildId) => {
   })()
 })
 
-// ElevenLabs API 만료 감지 시: 안내 embed → 저장된(합성 완료) 음성 재생 완료
-// → 음성채널 퇴장 → "TTS 종료" embed. 활성 세션 전부에 적용.
 setExpirationHandler(() => {
-  const sessions = listSessions()
-  logger.error(
-    'TTS',
-    `ElevenLabs 만료 — ${sessions.length}개 세션 종료 절차 시작`
-  )
-  for (const session of sessions) {
-    void (async () => {
-      // 1) 비활성화 안내 embed
-      await sendTtsEmbed(session.textChannelId, {
-        color: 0xe5372f,
-        title: '⚠️ TTS 기능 비활성화',
-        description:
-          'api 만료가 되어 TTS기능을 비활성화 되었습니다.\n이 문제는 관리자에게 문의를 해주세요!',
-      })
-      // 2) 부팅 때 미리 저장해 둔 안내 음성을 큐 끝에 넣어 재생.
-      //    (만료 후엔 합성 불가라 이 사전 저장본이 유일한 음성 안내다.)
-      if (expiryNoticeCache !== null) {
-        enqueueAudio(session.guildId, expiryNoticeCache)
-      }
-      // 3) 저장된 음성(안내 포함) 재생 완료 후 → 퇴장 + 종료 embed
-      scheduleLeaveWhenDrained(session.guildId, () => {
-        leaveGuildVoice(session.guildId)
-        clearSession(session.guildId)
-        void sendTtsEmbed(session.textChannelId, {
-          color: 0x99aab5,
-          title: '🔇 TTS 종료',
-          description:
-            '저장된 음성 재생을 마치고 음성채널에서 나갔어요.\n문제가 해결되면 `/tts 입장`으로 다시 불러주세요.',
-        })
-      })
-    })()
-  }
+  // 로컬 VOICEVOX 모드
 })
 
 startControlServer(ttsConfig?.port ?? DEFAULT_PORT, {

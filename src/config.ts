@@ -28,6 +28,21 @@ export type AiProviderConfig = {
   // 0.2로 낮춰 도구 호출·구조화된 출력을 안정적으로 만들고, 클라우드는
   // 엔드포인트 기본값을 따른다.
   temperature?: number
+  // 이 프로바이더의 컨텍스트 예산(토큰). 미지정 시 전역 config.ai.contextTokens,
+  // 그것도 없으면 엔드포인트로 자동 감지(클라우드 1m / 로컬 128k)한다.
+  // 로컬 llamacpp처럼 서버 실제 한도가 자동 감지값보다 작은 엔드포인트는
+  // 이 값을 직접 지정해 예산 초과 400을 막는다.
+  contextTokens?: number
+  /**
+   * 이미지를 입력으로 받을 수 있는지. 미지정(=false)이면 이미지 미지원으로 본다.
+   *
+   * 기본값을 false로 둔 이유: 이 저장소 규약대로 어떤 모델이 이미지를 받는지는
+   * config.json에 적는다는 전제다. 그런데 내가 추측해 true를 주면, 실제로 이미지를
+   * 받지 못하는 모델이 이미지를 통째로 받는 요청을 받고 400을 낸다. 그 400은 폴백
+   * 으로 넘어가게 만들어 더 문제를 키운다. 그래서 명시적 opt-in만 통과시킨다.
+   * (값은 config.json에 사용자가 직접 채워야 하며, 내가 채우지 않는다.)
+   */
+  supportsImages?: boolean
 }
 
 export type AiConfig = {
@@ -75,6 +90,7 @@ type Config = {
   supabase?: SupabaseConfig
   tts?: TtsBotConfig
   elevenLabs?: ElevenLabsConfig
+  serxngUrl?: string
 }
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires

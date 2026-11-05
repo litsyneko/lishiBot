@@ -1,3 +1,4 @@
+import { resolveMessageChannelAccess } from '../helpers/messageChannelAccess'
 import {
   permissionListForDescription,
   resolvePermissionOverwrites,
@@ -16,7 +17,6 @@ import {
   Collection,
   GuildBasedChannel,
   type Message,
-  PermissionFlagsBits,
 } from 'discord.js'
 
 // ─── Helpers ───
@@ -791,7 +791,16 @@ export function readChannelMessagesTool(client: Client): ToolDefinition {
             ? Math.min(limitRaw, 20)
             : 20
 
-        const guild = await resolveGuild(client, context)
+        if (!context.guildId) {
+          return {
+            success: false,
+            message: '개인 메시지에서는 채널 메시지를 읽을 수 없어요.',
+          }
+        }
+        const guild = client.guilds.cache.get(context.guildId)
+        if (!guild) {
+          return { success: false, message: '서버를 찾을 수 없어요.' }
+        }
 
         let channel: GuildBasedChannel | undefined
         if (channelId) {
@@ -811,24 +820,18 @@ export function readChannelMessagesTool(client: Client): ToolDefinition {
           return { success: false, message: '채널을 찾을 수 없어요.' }
         }
 
-        if (!isReadableChannel(channel)) {
+        const access = await resolveMessageChannelAccess(
+          client,
+          context,
+          channel.id,
+          'read'
+        )
+        if (!access.ok) return { success: false, message: access.reason }
+        const readableChannel = access.channel
+        if (!isReadableChannel(readableChannel)) {
           return {
             success: false,
             message: '이 채널에서는 메시지를 읽을 수 없어요.',
-          }
-        }
-
-        const me = guild.members.me
-        if (me) {
-          const perms = channel.permissionsFor(me)
-          if (perms && !perms.has(PermissionFlagsBits.ViewChannel)) {
-            return { success: false, message: '봇이 해당 채널을 볼 수 없어요.' }
-          }
-          if (perms && !perms.has(PermissionFlagsBits.ReadMessageHistory)) {
-            return {
-              success: false,
-              message: '봇이 메시지 기록을 읽을 권한이 없어요.',
-            }
           }
         }
 
@@ -837,7 +840,11 @@ export function readChannelMessagesTool(client: Client): ToolDefinition {
         if (before) fetchOptions.before = before
         if (after) fetchOptions.after = after
 
-        const fetched = await channel.messages.fetch(fetchOptions)
+        if (context.abortSignal?.aborted) {
+          return { success: false, message: '요청이 중단되어 읽지 않았어요.' }
+        }
+
+        const fetched = await readableChannel.messages.fetch(fetchOptions)
 
         const messages = [...fetched.values()]
           .filter((m) => includeBots || !m.author.bot)

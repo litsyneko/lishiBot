@@ -3,10 +3,10 @@ module.exports = {
     {
       name: 'lavalink',
       script: 'java',
-      args: '-Djava.io.tmpdir=/home/ubuntu/lishibot/lavalink/tmp -jar Lavalink.jar',
+      args: '-Djava.io.tmpdir=/home/ubuntu/projects/lishibot/lavalink/tmp -jar Lavalink.jar',
       cwd: `${__dirname}/lavalink`,
       env: {
-        JAVA_TOOL_OPTIONS: '-Djava.io.tmpdir=/home/ubuntu/lishibot/lavalink/tmp',
+        JAVA_TOOL_OPTIONS: '-Djava.io.tmpdir=/home/ubuntu/projects/lishibot/lavalink/tmp',
       },
     },
     {

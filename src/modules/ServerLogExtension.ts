@@ -57,7 +57,7 @@ import {
 } from '../features/serverLogs/serverLogSettings'
 import { logger } from '../utils/logger'
 import { requireServerManager } from '../utils/permissions'
-import type { ClanTagLogEntry } from './ClanTagExtension'
+// ClanTagExtension은 레거시 길드 전용 기능으로 제거되었습니다.
 import { Extension, applicationCommand, listener } from '@pikokr/command.ts'
 import {
   ApplicationCommandType,
@@ -83,7 +83,6 @@ import {
   type PartialUser,
   PermissionFlagsBits,
   TextChannel,
-  TextDisplayBuilder,
   type User,
   VoiceState,
 } from 'discord.js'
@@ -524,33 +523,6 @@ class ServerLogExtensionClass extends Extension {
     }
 
     enqueueServerLog(destination.channel, build())
-  }
-
-  @listener({ event: 'clanTagChange' as never })
-  async onClanTagChange(entry: ClanTagLogEntry): Promise<void> {
-    const guild = entry.member.guild
-    const destination = await resolveLogDestination(guild, 'clantag')
-    if (destination === null) return
-
-    const tagLabel =
-      entry.action === 'added'
-        ? `서버 태그 적용: **${entry.newTag ?? '알 수 없음'}**`
-        : `서버 태그 해제${entry.oldTag ? ` (이전: **${entry.oldTag}**)` : ''}`
-
-    const timestamp = `<t:${Math.floor(Date.now() / 1000)}:F>`
-
-    enqueueServerLog(
-      destination.channel,
-      new ContainerBuilder()
-        .setAccentColor(entry.action === 'added' ? 0x2ecc71 : 0xe74c3c)
-        .addTextDisplayComponents(
-          new TextDisplayBuilder().setContent(
-            `### 🏷️ 서버 태그 변경\n${entry.member.toString()} (${
-              entry.member.user.tag
-            })\n${tagLabel}\n-# ${timestamp}`
-          )
-        )
-    )
   }
 }
 

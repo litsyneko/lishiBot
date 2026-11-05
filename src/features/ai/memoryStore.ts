@@ -18,6 +18,10 @@ export type MemoryStore = {
   clear(userId: string): Promise<void>
   formatForPrompt(userId: string): Promise<string>
   buildPersonalityPrompt(userId: string): Promise<string>
+  promptBlocks(userId: string): Promise<{
+    readonly memoryBlock: string
+    readonly personalityBlock: string
+  }>
   isAvailable(): boolean
 }
 
@@ -98,8 +102,7 @@ export function createMemoryStore(): MemoryStore {
     await supabase.from('user_memories').delete().eq('user_id', userId)
   }
 
-  async function formatForPrompt(userId: string): Promise<string> {
-    const memories = await list(userId)
+  function formatMemories(memories: readonly Memory[]): string {
     if (memories.length === 0) return ''
 
     const lines = memories.map((m) => `- ${m.content}`)
@@ -179,6 +182,18 @@ export function createMemoryStore(): MemoryStore {
     return buildPersonalityAdjustments(memories)
   }
 
+  async function formatForPrompt(userId: string): Promise<string> {
+    return formatMemories(await list(userId))
+  }
+
+  async function promptBlocks(userId: string) {
+    const memories = await list(userId)
+    return {
+      memoryBlock: formatMemories(memories),
+      personalityBlock: buildPersonalityAdjustments(memories),
+    }
+  }
+
   return {
     list,
     add,
@@ -186,6 +201,7 @@ export function createMemoryStore(): MemoryStore {
     clear,
     formatForPrompt,
     buildPersonalityPrompt,
+    promptBlocks,
     isAvailable,
   }
 }

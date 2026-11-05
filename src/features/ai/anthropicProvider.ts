@@ -7,6 +7,7 @@ export type AnthropicConfig = {
   readonly model: string
   // 컨텍스트 예산(토큰). 히스토리를 이 안에 맞춰 넣는다.
   readonly contextTokens?: number
+  readonly supportsImages?: boolean
 }
 
 export function createAnthropicProvider(
@@ -21,6 +22,7 @@ export function createAnthropicProvider(
 
   return {
     label: 'Anthropic',
+    supportsImages: config.supportsImages === true,
     generate: async (prompt, history, options) =>
       runGenerate({
         model,

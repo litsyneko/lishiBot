@@ -5,8 +5,6 @@ import type {
 } from '../toolTypes'
 import { Client, type Sticker, StickerFormatType } from 'discord.js'
 
-const ALLOWED_GUILD_ID = '1440598081648328816'
-
 const formatTypeMap: Record<number, string> = {
   [StickerFormatType.PNG]: 'PNG',
   [StickerFormatType.APNG]: 'APNG',
@@ -39,12 +37,18 @@ export function getStickerTool(client: Client): ToolDefinition {
     hidden: true,
     async execute(
       args: Record<string, unknown>,
-      _context: ToolExecutionContext
+      context: ToolExecutionContext
     ): Promise<ToolResult> {
       try {
-        const guild = client.guilds.cache.get(ALLOWED_GUILD_ID)
+        const targetGuildId = context.guildId
+        const guild = targetGuildId
+          ? client.guilds.cache.get(targetGuildId)
+          : client.guilds.cache.first()
         if (guild === undefined) {
-          return { success: false, message: '스티커 서버를 찾을 수 없어요.' }
+          return {
+            success: false,
+            message: '스티커를 가져올 서버를 찾을 수 없어요.',
+          }
         }
 
         const stickers = await guild.stickers.fetch()

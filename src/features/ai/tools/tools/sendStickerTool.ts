@@ -5,8 +5,6 @@ import type {
 } from '../toolTypes'
 import { Client } from 'discord.js'
 
-const ALLOWED_GUILD_ID = '1440598081648328816'
-
 export function sendStickerTool(client: Client): ToolDefinition {
   return {
     declaration: {
@@ -60,9 +58,15 @@ export function sendStickerTool(client: Client): ToolDefinition {
           }
         }
 
-        const stickerGuild = client.guilds.cache.get(ALLOWED_GUILD_ID)
+        const targetGuildId = context.guildId
+        const stickerGuild = targetGuildId
+          ? client.guilds.cache.get(targetGuildId)
+          : client.guilds.cache.first()
         if (stickerGuild === undefined) {
-          return { success: false, message: '스티커 서버를 찾을 수 없어요.' }
+          return {
+            success: false,
+            message: '스티커를 가져올 서버를 찾을 수 없어요.',
+          }
         }
 
         const stickers = await stickerGuild.stickers.fetch()

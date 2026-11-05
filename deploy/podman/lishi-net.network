@@ -1,0 +1,7 @@
+[Network]
+NetworkName=lishi-net
+Subnet=172.31.100.0/24
+Gateway=172.31.100.1
+
+[Install]
+WantedBy=default.target

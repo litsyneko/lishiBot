@@ -1,7 +1,10 @@
 import { createMusicSettingsService } from '../../../../features/music/musicSettings'
 import { getMusicManager } from '../../../../modules/MusicExtension'
 import type { CustomPlayer } from '../../../../music/customPlayer'
-import { buildSearchQuery } from '../../../../music/musicService'
+import {
+  buildSearchQuery,
+  resolveSpotifyTrackTitle,
+} from '../../../../music/musicService'
 import { getVolume, setVolume } from '../../../../music/volumeStore'
 import { logger } from '../../../../utils/logger'
 import type {
@@ -181,7 +184,15 @@ export function playMusicTool(client: Client): ToolDefinition {
           })
         }
 
-        const searchQuery = buildSearchQuery(query)
+        let effectiveQuery = query.trim()
+        if (/^https?:\/\/open\.spotify\.com\/track\//i.test(effectiveQuery)) {
+          const spotifyTitle = await resolveSpotifyTrackTitle(effectiveQuery)
+          if (spotifyTitle !== null) {
+            effectiveQuery = spotifyTitle
+          }
+        }
+
+        const searchQuery = buildSearchQuery(effectiveQuery)
         const result = await player.search(
           searchQuery.source !== undefined
             ? {
